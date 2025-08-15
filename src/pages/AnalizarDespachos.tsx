@@ -3,15 +3,18 @@ import AppLayout from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Search, ArrowLeft, Download, Mail, Truck, Trash } from 'lucide-react';
+import { Search, ArrowLeft, Download, Mail, Truck, Trash, FileText } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 //import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import logoPath from '@/assets/images/logo.jpeg';
 
 interface Despacho {
   ticketid: number;
@@ -41,6 +44,8 @@ interface DetalleDespacho {
   precioCompraPorUnidadBase: number;
   presentacion: number;
   referenciasUltimasCompras: string;
+  taxId: string;
+  taxRate: number;
   totalCosto?: number;
 }
 
@@ -144,10 +149,10 @@ const AnalizarDespachos = () => {
 
   const exportToExcel = () => {
     try {
-      // Obtener el laboratorio del primer item de la lista filtrada
-      const primerLaboratorio = filteredDetalleDespacho[0]?.nombreLaboratorio || 'General';
-      // Limpiar el nombre del laboratorio para el nombre del archivo
-      const laboratorioParaNombre = primerLaboratorio
+      // Obtener el laboratorio del primer item filtrado
+      const laboratorio = filteredDetalleDespacho[0]?.nombreLaboratorio || 'General';
+      // Limpiar el nombre para el archivo
+      const laboratorioParaNombre = laboratorio
         .replace(/[\/\\?%*:|"<>]/g, '-') // Reemplazar caracteres no válidos
         .trim(); // Eliminar espacios al inicio y final
 
@@ -162,6 +167,7 @@ const AnalizarDespachos = () => {
           'Despachado': item.cantidadDespachaBodega,
           'Faltante': editedValues[item.productoId] ?? item.cantidadFaltante,
           'Últ. Costo': (editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase)?.toFixed(2).replace('.', ','),
+          'IMP.': (item.taxRate * 100).toFixed(0) + '%',
           'Total Costo': calculateTotalCosto(
             editedValues[item.productoId] ?? item.cantidadFaltante,
             editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase
@@ -373,6 +379,180 @@ const AnalizarDespachos = () => {
     });
   };
 
+  const validarMismoLaboratorio = () => {
+    const laboratorio = filteredDetalleDespacho[0]?.nombreLaboratorio;
+    return filteredDetalleDespacho.every(item => item.nombreLaboratorio === laboratorio);
+  };
+
+  const generatePDF = () => {
+    if (!validarMismoLaboratorio()) {
+      toast({
+        title: "Error",
+        description: "Solo se puede generar PDF para un único laboratorio",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Calcular totales primero
+    const totales = filteredDetalleDespacho.reduce((acc, item) => {
+      const cantidad = editedValues[item.productoId] ?? item.cantidadFaltante;
+      const costo = editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase;
+      const subtotal = cantidad * costo;
+
+      if (item.taxRate > 0) {
+        acc.subtotalImp += subtotal;
+        acc.impuesto += subtotal * item.taxRate;
+      } else {
+        acc.subtotalCero += subtotal;
+      }
+      
+      return acc;
+    }, { 
+      subtotalCero: 0, 
+      subtotalImp: 0, 
+      impuesto: 0 
+    });
+
+    const doc = new jsPDF();
+    
+    // Agregar logo con posición ajustada
+    doc.addImage(logoPath, 'JPEG', 20, 15, 50, 20);
+
+    // Encabezado con tamaño ajustado
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text('ORDEN DE COMPRA', 105, 25, { align: 'center' });
+    
+    // Información del documento con tamaño reducido y espaciado ajustado
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`No.: ${selectedTicket}`, 20, 45);
+    doc.text(`Proveedor: ${filteredDetalleDespacho[0].nombreLaboratorio}`, 20, 52);
+    
+    // Fecha con más separación de la tabla
+    const fecha = new Date().toLocaleDateString('es-EC', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).replace(/(\d+)\/(\d+)\/(\d+)/, '$1/$2/$3');
+    doc.text(`Fecha: ${fecha}`, 20, 59);
+
+    // Tabla principal con alineaciones ajustadas
+    autoTable(doc, {
+      head: [['SKU', 'Producto', 'Cantidad', 'Precio', 'Imp.', 'Subtotal']],
+      body: filteredDetalleDespacho.map(item => [
+        item.productoId,
+        item.nombreProducto,
+        editedValues[item.productoId] ?? item.cantidadFaltante,
+        (editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase).toFixed(2),
+        (item.taxRate * 100).toFixed(0) + '%',
+        calculateTotalCosto(
+          editedValues[item.productoId] ?? item.cantidadFaltante,
+          editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase
+        ).toFixed(2)
+      ]),
+      startY: 70,
+      theme: 'grid',
+      styles: { 
+        fontSize: 7,
+        cellPadding: 2
+      },
+      headStyles: { 
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'left' },
+        2: { halign: 'center' },
+        3: { halign: 'right' },
+        4: { halign: 'center' },
+        5: { halign: 'right' }
+      }
+    });
+
+    // Tabla de resumen tributario
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    
+    // Actualizar la tabla de resumen con los totales calculados
+    autoTable(doc, {
+      startY: finalY,
+      theme: 'plain',
+      body: [
+        ['Subtotal:', (totales.subtotalCero + totales.subtotalImp).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })],
+        ['Descuento:', '$ 0.00'],
+        ['Subtotal 0%:', totales.subtotalCero.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })],
+        ['Subtotal 15%:', totales.subtotalImp.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })],
+        ['Impuesto:', totales.impuesto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })]
+      ],
+      styles: {
+        fontSize: 8,
+        fontStyle: 'bold',
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { 
+          cellWidth: 60,
+          halign: 'right'
+        },
+        1: { 
+          cellWidth: 40,
+          halign: 'right'
+        }
+      },
+      margin: { left: 100 }
+    });
+
+    // Agregar línea separadora
+    const finalTableY = (doc as any).lastAutoTable.finalY + 2;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.line(140, finalTableY, 240, finalTableY);
+
+    // Agregar el VALOR TOTAL en una fila separada y resaltada
+    autoTable(doc, {
+      startY: finalTableY + 2,
+      theme: 'plain',
+      body: [
+        [
+          'VALOR TOTAL:', 
+          (totales.subtotalCero + totales.subtotalImp + totales.impuesto).toLocaleString('es-EC', { 
+            style: 'currency', 
+            currency: 'USD' 
+          })
+        ]
+      ],
+      styles: {
+        fontSize: 9,
+        fontStyle: 'bold',
+        textColor: [0, 0, 0],
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { 
+          cellWidth: 60,
+          halign: 'right'
+        },
+        1: { 
+          cellWidth: 40,
+          halign: 'right',
+          fontStyle: 'bold'
+        }
+      },
+      margin: { left: 100 },
+      didParseCell: function(data) {
+        // Aplicar fondo gris claro a toda la fila
+        doc.setFillColor(240, 240, 240);
+        doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+      }
+    });
+
+    // Abrir PDF en nueva ventana
+    window.open(URL.createObjectURL(doc.output('blob')));
+  };
+
   if (isLoading && !selectedTicket) {
     return (
       <AppLayout title="Analizar Despachos">
@@ -548,6 +728,13 @@ const AnalizarDespachos = () => {
                     <Mail className="mr-2 h-4 w-4" />
                     Email
                   </Button>
+                  <Button 
+                    onClick={generatePDF}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    PDF
+                  </Button>
                 </div>
               </div>
             </div>
@@ -600,6 +787,7 @@ const AnalizarDespachos = () => {
                         <TableHead className="text-white text-center">Despachado</TableHead>
                         <TableHead className="text-white text-center">Faltante</TableHead>
                         <TableHead className="text-white text-center w-24">Últ. Costo</TableHead>
+                        <TableHead className="text-white text-center w-16">IMP.</TableHead>
                         <TableHead className="text-white text-center w-24 bg-orange-500">Total Costo</TableHead>
                         <TableHead className="text-white text-center">WMA</TableHead>
                         <TableHead className="text-white text-center">Stock Bodega</TableHead>
@@ -639,9 +827,12 @@ const AnalizarDespachos = () => {
                               step="0.01"
                             />
                             </TableCell>
+                            <TableCell className="text-center">
+                              {(item.taxRate * 100).toFixed(0)}%
+                            </TableCell>
                             <TableCell 
                               className="text-right bg-orange-100 text-orange-800 font-medium whitespace-nowrap"
-                              style={{ backgroundColor: 'rgb(255, 237, 213)' }} // Asegura color consistente
+                              style={{ backgroundColor: 'rgb(255, 237, 213)' }}
                             >
                               {calculateTotalCosto(
                                 editedValues[item.productoId] ?? item.cantidadFaltante,
