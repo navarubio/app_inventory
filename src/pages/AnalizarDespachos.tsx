@@ -181,7 +181,7 @@ const AnalizarDespachos = () => {
   
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       
-      // Configurar formato de números para la columna Últ. Costo
+      // Configurar formato de números
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
       const ultCostoCol = 7; // Índice de la columna 'Últ. Costo'
       for (let row = range.s.r + 1; row <= range.e.r; row++) {
@@ -194,11 +194,18 @@ const AnalizarDespachos = () => {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'DetalleDespacho');
       
-      // Usar el nombre del laboratorio en el nombre del archivo
-      const fileName = `despacho_${selectedTicket}_${laboratorioParaNombre}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      // Cambiar la extensión a .xls y el tipo de archivo
+      const fileName = `despacho_${selectedTicket}_${laboratorioParaNombre}_${new Date().toISOString().split('T')[0]}.xls`;
       
-      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const excelBuffer = XLSX.write(workbook, { 
+        bookType: 'biff8', // Usar formato xls (BIFF8)
+        type: 'array'
+      });
+
+      const data = new Blob([excelBuffer], { 
+        type: 'application/vnd.ms-excel' // Cambiar el tipo MIME para xls
+      });
+      
       const url = URL.createObjectURL(data);
       const link = document.createElement('a');
       link.href = url;
@@ -211,14 +218,14 @@ const AnalizarDespachos = () => {
       toast({
         title: "Éxito",
         description: "Archivo Excel generado correctamente",
-        variant: "default" // o "success" si tu implementación de toast tiene ese variant
+        variant: "default"
       });
     } catch (error) {
       console.error('Error al exportar a Excel:', error);
       toast({
         title: "Error",
         description: "Error al generar el archivo Excel",
-        variant: "destructive" // o "error" si tu implementación de toast tiene ese variant
+        variant: "destructive"
       });
     }
   };
@@ -262,12 +269,16 @@ const AnalizarDespachos = () => {
                 <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Laboratorio</th>
                 <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Optimo</th>
                 <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Solicitado</th>
-                <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Últ. Costo</th>
+                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Últ. Costo</th>
+                <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">IMP.</th>
+                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Total Costo</th>
               </tr>
             </thead>
             <tbody>
               ${filteredDetalleDespacho.map(item => {
                 const faltante = editedValues[item.productoId] ?? item.cantidadFaltante;
+                const costo = editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase;
+                const totalCosto = calculateTotalCosto(faltante, costo);
                 return `
                   <tr>
                     <td style="padding: 8px; border: 1px solid #ddd;">${item.nombreProducto}</td>
@@ -277,12 +288,69 @@ const AnalizarDespachos = () => {
                     <td style="padding: 8px; text-align: center; border: 1px solid #ddd; color: ${faltante > 0 ? 'red' : 'inherit'};">
                       <strong>${faltante}</strong>
                     </td>
-                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd;">${item.precioCompraPorUnidadBase?.toFixed(2) || '0.00'}</td>
+                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">
+                      ${costo.toFixed(2)}
+                    </td>
+                    <td style="padding: 8px; text-align: center; border: 1px solid #ddd;">
+                      ${(item.taxRate * 100).toFixed(0)}%
+                    </td>
+                    <td style="padding: 8px; text-align: right; border: 1px solid #ddd;">
+                      ${totalCosto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}
+                    </td>
                   </tr>
                 `;
               }).join('')}
             </tbody>
           </table>
+
+          <table style="width: 300px; border-collapse: collapse; margin: 15px 0; margin-left: auto;">
+            <tbody style="text-align: right;">
+              ${(() => {
+                const totales = filteredDetalleDespacho.reduce((acc, item) => {
+                  const cantidad = editedValues[item.productoId] ?? item.cantidadFaltante;
+                  const costo = editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase;
+                  const subtotal = cantidad * costo;
+
+                  if (item.taxRate > 0) {
+                    acc.subtotalImp += subtotal;
+                    acc.impuesto += subtotal * item.taxRate;
+                  } else {
+                    acc.subtotalCero += subtotal;
+                  }
+                  
+                  return acc;
+                }, { subtotalCero: 0, subtotalImp: 0, impuesto: 0 });
+
+                return `
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px; font-weight: bold;">Subtotal:</td>
+                    <td style="padding: 4px;">${(totales.subtotalCero + totales.subtotalImp).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px; font-weight: bold;">Descuento:</td>
+                    <td style="padding: 4px;">$ 0.00</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px; font-weight: bold;">Subtotal 0%:</td>
+                    <td style="padding: 4px;">${totales.subtotalCero.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px; font-weight: bold;">Subtotal 15%:</td>
+                    <td style="padding: 4px;">${totales.subtotalImp.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 4px; font-weight: bold;">Impuesto:</td>
+                    <td style="padding: 4px;">${totales.impuesto.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</td>
+                  </tr>
+                  <tr style="background-color: #f3f4f6;">
+                    <td style="padding: 4px; font-weight: bold;">VALOR TOTAL:</td>
+                    <td style="padding: 4px; font-weight: bold;">${(totales.subtotalCero + totales.subtotalImp + totales.impuesto).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</td>
+                  </tr>
+                `;
+              })()}
+            </tbody>
+          </table>
+
           <p>Gracias por atender nuestros requerimientos.</p>
         `
       };
@@ -346,13 +414,29 @@ const AnalizarDespachos = () => {
   };
 
   const getTotalGeneral = () => {
-    return filteredDetalleDespacho
+    const totales = filteredDetalleDespacho
       .filter(item => !deletedRows.includes(item.productoId))
-      .reduce((total, item) => {
-        const faltante = editedValues[item.productoId] ?? item.cantidadFaltante;
+      .reduce((acc, item) => {
+        const cantidad = editedValues[item.productoId] ?? item.cantidadFaltante;
         const costo = editedCostos[item.productoId] ?? item.precioCompraPorUnidadBase;
-        return total + calculateTotalCosto(faltante, costo);
-      }, 0);
+        const subtotal = cantidad * costo;
+
+        if (item.taxRate > 0) {
+          acc.subtotalImp += subtotal;
+          acc.impuesto += subtotal * item.taxRate;
+        } else {
+          acc.subtotalCero += subtotal;
+        }
+        
+        return acc;
+      }, { 
+        subtotalCero: 0, 
+        subtotalImp: 0, 
+        impuesto: 0 
+      });
+
+    // Retornar la suma total incluyendo impuestos
+    return totales.subtotalCero + totales.subtotalImp + totales.impuesto;
   };
 
   const handleEditCosto = (productoId: string, value: number) => {
@@ -427,7 +511,7 @@ const AnalizarDespachos = () => {
     // Información del documento con tamaño reducido y espaciado ajustado
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text(`No.: ${selectedTicket}`, 20, 45);
+    doc.text(`No.: ${selectedTicket} / ${filteredDetalleDespacho[0].codigoLocal} - ${filteredDetalleDespacho[0].nombreLocal}`, 20, 45);
     doc.text(`Proveedor: ${filteredDetalleDespacho[0].nombreLaboratorio}`, 20, 52);
     
     // Fecha con más separación de la tabla
