@@ -458,7 +458,7 @@ export default function KardexGeneral() {
               <Input
                 placeholder="Filtrar por laboratorio"
                 value={filtros.laboratorio}
-                onChange={(e) => setFfiltros({...filtros, laboratorio: e.target.value})}
+                onChange={(e) => setFiltros({...filtros, laboratorio: e.target.value})} // Corregido: setFfiltros -> setFiltros
               />
             </div>
             <div className="flex items-end space-x-2">
