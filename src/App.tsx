@@ -15,6 +15,7 @@ import CargasByLocal from "./pages/CargasByLocal";
 import AnalizarDespachos from "./pages/AnalizarDespachos";
 import KardexGeneral from "./pages/KardexGeneral";
 import AppLayout from './components/AppLayout';
+import CategoriaProductos from './pages/CategoriaProductos';
 
 const queryClient = new QueryClient();
 
@@ -107,6 +108,14 @@ const App = () => (
                 <AppLayout title="Analizar Despachos">
                   <KardexGeneral />
                 </AppLayout>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/categoria-productos"
+            element={
+              <PrivateRoute>
+                <CategoriaProductos />
               </PrivateRoute>
             }
           />

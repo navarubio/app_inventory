@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { Menu, ShoppingCart, Package, Upload, ChevronRight, ChevronLeft, LogOut, BarChart2, Store, Home, Database, Truck, FileText } from "lucide-react";
+import { Menu, ShoppingCart, Package, Upload, ChevronRight, ChevronLeft, LogOut, BarChart2, Store, Home, Database, Truck, FileText, Box, Package2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ interface AppLayoutProps {
 const AppLayout = ({ children, title }: AppLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
   const userData = JSON.parse(sessionStorage.getItem('userData') || '{}');
 
   const handleLogout = () => {
@@ -27,6 +28,65 @@ const AppLayout = ({ children, title }: AppLayoutProps) => {
   const navigateToDashboard = () => {
     navigate('/');
   };
+
+  const { pathname } = location;
+
+  const navigation = [
+    {
+      name: 'Analizar Carga',
+      href: '/analizar-carga',
+      icon: Database,
+      current: pathname === '/analizar-carga'
+    },
+    {
+      name: 'Completar Compras',
+      href: '/completar-compras',
+      icon: ShoppingCart,
+      current: pathname === '/completar-compras'
+    },
+    {
+      name: 'Analizar Lotes',
+      href: '/analizar-lotes',
+      icon: Package,
+      current: pathname === '/analizar-lotes'
+    },
+    {
+      name: 'Conciliar Cargar',
+      href: '/conciliar-cargar',
+      icon: Upload,
+      current: pathname === '/conciliar-cargar'
+    },
+    {
+      name: 'Cargas por Operador',
+      href: '/cargas-by-operador',
+      icon: BarChart2,
+      current: pathname === '/cargas-by-operador'
+    },
+    {
+      name: 'Cargas por Local',
+      href: '/cargas-by-local',
+      icon: Store,
+      current: pathname === '/cargas-by-local'
+    },
+    {
+      name: 'Analizar Despachos',
+      href: '/analizar-despachos',
+      icon: Truck,
+      current: pathname === '/analizar-despachos'
+    },
+    {
+      name: 'Kardex General',
+      href: '/kardex-general',
+      icon: FileText,
+      current: pathname === '/kardex-general'
+    },
+    {
+      name: 'Categorización',
+      href: '/categoria-productos',
+      icon: Package2,
+      current: pathname === '/categoria-productos'
+    },
+  ];
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-gray-50 to-gray-100">
@@ -67,62 +127,16 @@ const AppLayout = ({ children, title }: AppLayoutProps) => {
 
         <div className="flex-1 py-4">
           <nav className="space-y-2 px-3">
-            <button 
-              onClick={() => navigate('/analizar-carga')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <Database size={20} />
-              {sidebarOpen && <span className="ml-3">Analizar Carga</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/completar-compras')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <ShoppingCart size={20} />
-              {sidebarOpen && <span className="ml-3">Completar Compras</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/analizar-lotes')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <Package size={20} />
-              {sidebarOpen && <span className="ml-3">Analizar Lotes</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/conciliar-cargar')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <Upload size={20} />
-              {sidebarOpen && <span className="ml-3">Conciliar Cargar</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/cargas-by-operador')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <BarChart2 size={20} />
-              {sidebarOpen && <span className="ml-3">Cargas por Operador</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/cargas-by-local')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <Store size={20} />
-              {sidebarOpen && <span className="ml-3">Cargas por Local</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/analizar-despachos')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <Truck size={20} />
-              {sidebarOpen && <span className="ml-3">Analizar Despachos</span>}
-            </button>
-            <button 
-              onClick={() => navigate('/kardex-general')}
-              className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
-            >
-              <FileText size={20} />
-              {sidebarOpen && <span className="ml-3">Kardex General</span>}
-            </button>
+            {navigation.map((item) => (
+              <button 
+                key={item.name}
+                onClick={() => navigate(item.href)}
+                className="flex items-center w-full py-2 px-3 rounded-lg hover:bg-blue-800 transition-colors"
+              >
+                <item.icon size={20} />
+                {sidebarOpen && <span className="ml-3">{item.name}</span>}
+              </button>
+            ))}
           </nav>
         </div>
 
