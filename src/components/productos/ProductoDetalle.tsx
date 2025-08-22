@@ -13,6 +13,8 @@ import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
 import { CategoriaSelector } from "./CategoriaSelector"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
+import { Button } from "@/components/ui/button"
+import { CloneCategorization } from "./CloneCategorization"
 
 interface ProductImage {
   id: number
@@ -22,41 +24,55 @@ interface ProductImage {
   altText: string | null
 }
 
+interface ProductFormState {
+  // Identificación
+  codigoInterno: string
+  upc: string
+  nombreProducto: string
+  presentacionOriginal: number
+  laboratorio: string
+  categoriaOriginal: string
+  categoryId: number | null
+  subcategoryId: number | null
+  specific1Id: number | null
+  specific2Id: number | null
+  
+  // Atributos de Filtro
+  formaFarmaceutica: string | null
+  concentracionDosis: string | null
+  contenidoEnvase: string | null
+  viaAdministracion: string | null
+  poblacionDiana: string | null
+  tagsIndicaciones: string | null
+  
+  // Regulatorio
+  paisFabricacion: string
+  requierePrescripcionMedica: boolean
+  esPsicotropico: boolean
+  requiereCadenaDeFrio: boolean
+  
+  // Vademécum
+  principioActivo: string
+  patologia: string
+  posologia: string
+  contraindicaciones: string
+  sustitutoSugerido: string
+}
+
 interface ProductoDetalleProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  producto: {
-    codigoInterno: string
-    upc: string
-    nombreProducto: string
-    presentacionOriginal: number
-    laboratorio: string
-    categoriaOriginal: string
-    categoryId: number | null
-    subcategoryId: number | null
-    specific1Id: number | null
-    specific2Id: number | null
-    formaFarmaceutica: string | null
-    concentracionDosis: string | null
-    contenidoEnvase: string | null
-    viaAdministracion: string | null
-    poblacionDiana: string | null
-    tagsIndicaciones: string | null
-    paisFabricacion: string
-    requierePrescripcionMedica: boolean
-    esPsicotropico: boolean
-    requiereCadenaDeFrio: boolean
-    principioActivo: string
-    patologia: string
-    posologia: string
-    contraindicaciones: string
-    sustitutoSugerido: string
+  producto: ProductFormState & {
     nivelCompletacion: number
   }
 }
 
 export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetalleProps) {
   const [images, setImages] = useState<ProductImage[]>([])
+  const [isCloneDialogOpen, setIsCloneDialogOpen] = useState(false)
+  const [formState, setFormState] = useState<ProductFormState>({ ...producto })
+  const [isFormDirty, setIsFormDirty] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   
   // Estado para manejar la categorización del producto
   const [categorization, setCategorization] = useState({
@@ -66,25 +82,102 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
     specific2Id: producto.specific2Id || null,
   })
 
-  // Actualizar categorización cuando cambie el producto
+  // Efecto para resetear el estado cuando cambia el producto o se abre/cierra el modal
   useEffect(() => {
+    console.log('Reseteando estado para producto:', producto.codigoInterno)
+    setFormState({ ...producto })
     setCategorization({
       categoryId: producto.categoryId || null,
       subcategoryId: producto.subcategoryId || null,
       specific1Id: producto.specific1Id || null,
       specific2Id: producto.specific2Id || null,
     })
-  }, [producto.categoryId, producto.subcategoryId, producto.specific1Id, producto.specific2Id])
+    setIsFormDirty(false)
+  }, [producto.codigoInterno, open])
 
-  // Función para manejar cambios en la categorización
-  const handleCategorizationChange = (field: string, value: number | null) => {
-    console.log(`Actualizando estado: ${field} = ${value}`)
-    
-    setCategorization(prevState => ({
-      ...prevState,
-      [field]: value,
-    }))
+  // Función para manejar cambios en el formulario
+  const handleFormChange = (field: keyof ProductFormState, value: any) => {
+    setFormState(prev => {
+      const newState = { ...prev, [field]: value }
+      // Verificar si hay cambios comparando con el producto original
+      const hasChanges = JSON.stringify(newState) !== JSON.stringify(producto)
+      setIsFormDirty(hasChanges)
+      return newState
+    })
   }
+
+  // Función para guardar cambios
+  const handleSave = async () => {
+    try {
+      setIsSaving(true)
+      const response = await fetch(`${SERVER_URL}:8890/api/products/${producto.codigoInterno}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formState)
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al guardar los cambios')
+      }
+
+      toast({
+        title: "Cambios guardados",
+        description: "Los cambios se han guardado exitosamente.",
+      })
+      setIsFormDirty(false)
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Error guardando cambios:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudieron guardar los cambios. Por favor, intente nuevamente.",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Función para manejar la selección completa de categorización desde el clon
+  const handleCloneSelection = (newCategorization: {
+    categoryId: number | null
+    subcategoryId: number | null
+    specific1Id: number | null
+    specific2Id: number | null
+  }) => {
+    console.log('Aplicando categorización clonada:', newCategorization)
+    // Actualizar ambos estados
+    setCategorization(newCategorization)
+    setFormState(prev => ({
+      ...prev,
+      ...newCategorization
+    }))
+    // Marcar el formulario como modificado
+    setIsFormDirty(true)
+  }
+
+  // Función para manejar cambios individuales en la categorización
+  const handleCategorizationChange = (field: string, value: number | null) => {
+    console.log(`Actualizando categorización: ${field} = ${value}`)
+    
+    // Actualizar el estado de categorización local
+    setCategorization(prev => ({
+      ...prev,
+      [field]: value
+    }))
+
+    // Actualizar el formState para reflejar los cambios
+    setFormState(prev => ({
+      ...prev,
+      [field]: value
+    }))
+
+    // Marcar el formulario como modificado
+    setIsFormDirty(true)
+  }
+
   // URL base del servidor
   const SERVER_URL = 'http://10.10.10.251';
 
@@ -140,6 +233,23 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
             <Badge variant="outline">{producto.codigoInterno}</Badge>
           </DialogTitle>
         </DialogHeader>
+        <div className="absolute right-4 top-4 flex items-center gap-2">
+          <Button
+            variant="default"
+            className="bg-green-600 hover:bg-green-700 text-white"
+            onClick={handleSave}
+            disabled={!isFormDirty || isSaving}
+          >
+            {isSaving ? (
+              <>
+                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                Guardando...
+              </>
+            ) : (
+              'Guardar Cambios'
+            )}
+          </Button>
+        </div>
         
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
@@ -192,12 +302,20 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                   </CardHeader>
                   <CardContent className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
+                      <Label htmlFor="codigoInterno">Código Interno</Label>
+                      <Input id="codigoInterno" value={producto.codigoInterno} readOnly />
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="upc">UPC</Label>
                       <Input id="upc" value={producto.upc} readOnly />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="nombreProducto">Nombre del Producto</Label>
-                      <Input id="nombreProducto" value={producto.nombreProducto} />
+                      <Input 
+                        id="nombreProducto" 
+                        value={formState.nombreProducto}
+                        onChange={(e) => handleFormChange('nombreProducto', e.target.value)}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="presentacion">Presentación Original</Label>
@@ -218,7 +336,21 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
 
                     {/* Selector de Nueva Categorización */}
                     <div className="col-span-2">
-                      <Label>Nueva Categorización</Label>
+                      <div className="flex justify-between items-center mb-4">
+                        <Label>Nueva Categorización</Label>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setIsCloneDialogOpen(true)}
+                        >
+                          Copiar categorización de otro producto
+                        </Button>
+                      </div>
+                      <CloneCategorization
+                        open={isCloneDialogOpen}
+                        onOpenChange={setIsCloneDialogOpen}
+                        onProductSelect={handleCloneSelection}
+                      />
                       <ErrorBoundary
                         fallback={
                           <div className="p-4 border border-destructive rounded-lg bg-destructive/10">
