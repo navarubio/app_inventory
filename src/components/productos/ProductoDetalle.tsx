@@ -15,6 +15,15 @@ import { CategoriaSelector } from "./CategoriaSelector"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { Button } from "@/components/ui/button"
 import { CloneCategorization } from "./CloneCategorization"
+import { SearchableSelect } from "./SearchableSelect"
+import { TagSelect } from "./TagSelect"
+import { SuggestionInput } from "./SuggestionInput"
+import { parseConcentracion, parseEnvase } from "@/utils/productParsers"
+import { ToggleRow } from "./ToggleRow"
+import { CountrySelect } from "./CountrySelect"
+import { AssistantButton } from "./AssistantButton"
+import { PrincipioActivoSelect } from "./PrincipioActivoSelect"
+import { ImageGallery } from "./ImageGallery"
 
 interface ProductImage {
   id: number
@@ -38,18 +47,21 @@ interface ProductFormState {
   specific2Id: number | null
   
   // Atributos de Filtro
+  formaFarmaceuticaId: number | null
   formaFarmaceutica: string | null
   concentracionDosis: string | null
   contenidoEnvase: string | null
+  viaAdministracionId: number | null
   viaAdministracion: string | null
-  poblacionDiana: string | null
-  tagsIndicaciones: string | null
-  
-  // Regulatorio
+
+  // Datos Regulatorios
   paisFabricacion: string
   requierePrescripcionMedica: boolean
   esPsicotropico: boolean
   requiereCadenaDeFrio: boolean
+  poblacionDianaId: number | null
+  poblacionDiana: string | null
+  tags: Array<{ id: number | null, nombre: string }>
   
   // Vademécum
   principioActivo: string
@@ -70,9 +82,132 @@ interface ProductoDetalleProps {
 export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetalleProps) {
   const [images, setImages] = useState<ProductImage[]>([])
   const [isCloneDialogOpen, setIsCloneDialogOpen] = useState(false)
-  const [formState, setFormState] = useState<ProductFormState>({ ...producto })
+  const [formState, setFormState] = useState<ProductFormState>({} as ProductFormState)
   const [isFormDirty, setIsFormDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isAssistantLoading, setIsAssistantLoading] = useState(false)
+
+  // Efecto para inicializar el formulario solo cuando cambia el código interno del producto
+  useEffect(() => {
+    if (producto?.codigoInterno) {
+      setFormState(prevState => {
+        // Solo actualizar si el código interno es diferente
+        if (prevState.codigoInterno !== producto.codigoInterno) {
+          return { ...producto }
+        }
+        return prevState
+      })
+      setIsFormDirty(false) // Resetear el estado de modificación
+    }
+  }, [producto.codigoInterno])
+
+  // Efecto para limpiar campos del Vademécum cuando se limpia principio activo
+  useEffect(() => {
+    if (!formState.principioActivo || formState.principioActivo.trim() === '') {
+      // Verificar si hay contenido en alguno de los campos antes de limpiar
+      if (formState.posologia || formState.contraindicaciones || 
+          formState.sustitutoSugerido || formState.patologia) {
+        setFormState(prevState => ({
+          ...prevState,
+          posologia: '',
+          contraindicaciones: '',
+          sustitutoSugerido: '',
+          patologia: ''
+        }));
+        // Marcar el formulario como modificado
+        setIsFormDirty(true);
+      }
+    }
+  }, [formState.principioActivo]);
+
+  const handleSuggestion = (fieldName: 'concentracion' | 'envase') => {
+    if (!formState.nombreProducto) {
+      toast({
+        title: "No hay nombre de producto",
+        description: "Por favor, ingrese el nombre del producto primero.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const result = fieldName === 'concentracion' 
+      ? parseConcentracion(formState.nombreProducto)
+      : parseEnvase(formState.nombreProducto)
+
+    if (result.found && result.value) {
+      const field = fieldName === 'concentracion' ? 'concentracionDosis' : 'contenidoEnvase'
+      setFormState(prev => ({
+        ...prev,
+        [field]: result.value
+      }))
+      setIsFormDirty(true)
+      toast({
+        title: "Sugerencia aplicada",
+        description: `Se ha detectado: ${result.value}`
+      })
+    } else {
+      toast({
+        title: "No se encontró sugerencia",
+        description: `No se pudo detectar ${fieldName === 'concentracion' ? 'concentración/dosis' : 'contenido del envase'} en el nombre del producto.`,
+        variant: "destructive"
+      })
+    }
+  }
+
+  // Función para manejar el asistente de vademécum
+  const handleAssistantClick = async () => {
+    // Validar que haya un principio activo
+    if (!formState.principioActivo?.trim()) {
+      toast({
+        title: "Principio Activo Requerido",
+        description: "Por favor, ingrese el principio activo antes de usar el asistente.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setIsAssistantLoading(true)
+    try {
+      const response = await fetch(
+        `${SERVER_URL}/api/vademecum-suggestions?principioActivo=${encodeURIComponent(formState.principioActivo)}`
+      )
+
+      if (!response.ok) {
+        throw new Error('No se encontraron sugerencias')
+      }
+
+      const suggestionData = await response.json()
+      const disclaimer = "\n\n[Sugerencia basada en otro producto. Por favor, verifique y adapte si es necesario.]"
+
+      setFormState(prevData => ({
+        ...prevData,
+        principioActivo: suggestionData.principioActivo || prevData.principioActivo,
+        posologia: suggestionData.posologia ? suggestionData.posologia + disclaimer : prevData.posologia,
+        contraindicaciones: suggestionData.contraindicaciones 
+          ? suggestionData.contraindicaciones + disclaimer 
+          : prevData.contraindicaciones,
+        sustitutoSugerido: suggestionData.sustitutoSugerido 
+          ? suggestionData.sustitutoSugerido + disclaimer 
+          : prevData.sustitutoSugerido,
+        patologia: suggestionData.patologia || prevData.patologia
+      }))
+
+      setIsFormDirty(true)
+      toast({
+        title: "Sugerencias Aplicadas",
+        description: "La información del vademécum ha sido actualizada con las sugerencias."
+      })
+    } catch (error) {
+      console.error('Error en el asistente:', error)
+      toast({
+        title: "No se encontraron sugerencias",
+        description: "No se encontraron sugerencias para este principio activo.",
+        variant: "destructive"
+      })
+    } finally {
+      setIsAssistantLoading(false)
+    }
+  }
   
   // Estado para manejar la categorización del producto
   const [categorization, setCategorization] = useState({
@@ -85,7 +220,14 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
   // Efecto para resetear el estado cuando cambia el producto o se abre/cierra el modal
   useEffect(() => {
     console.log('Reseteando estado para producto:', producto.codigoInterno)
-    setFormState({ ...producto })
+    setFormState({ 
+      ...producto,
+      // Asegurar valores por defecto para campos regulatorios
+      paisFabricacion: producto.paisFabricacion || 'EC',
+      requierePrescripcionMedica: producto.requierePrescripcionMedica || false,
+      esPsicotropico: producto.esPsicotropico || false,
+      requiereCadenaDeFrio: producto.requiereCadenaDeFrio || false,
+    })
     setCategorization({
       categoryId: producto.categoryId || null,
       subcategoryId: producto.subcategoryId || null,
@@ -293,8 +435,10 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
               </TabsTrigger>
             </TabsList>
 
-            <ScrollArea className="h-[60vh] w-full rounded-md border p-4 bg-[#f5f5dc] shadow-inner">
-              <TabsContent value="identificacion">
+            <div className="w-full h-[60vh] overflow-hidden">
+              <ScrollArea className="h-full w-full rounded-md border p-4 bg-[#f5f5dc] shadow-inner">
+                <div className="pr-4">
+                  <TabsContent value="identificacion">
                 <Card>
                   <CardHeader>
                     <CardTitle>Información Básica</CardTitle>
@@ -385,44 +529,59 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                   <CardContent className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="formaFarmaceutica">Forma Farmacéutica</Label>
-                      <Input 
-                        id="formaFarmaceutica" 
-                        value={producto.formaFarmaceutica || ''} 
+                      <SearchableSelect
+                        endpoint="/api/formas-farmaceuticas/activas"
+                        value={formState.formaFarmaceuticaId || null}
+                        onChange={(value) => handleFormChange('formaFarmaceuticaId', value)}
+                        placeholder="Seleccionar forma farmacéutica..."
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="concentracionDosis">Concentración/Dosis</Label>
-                      <Input 
+                      <SuggestionInput 
                         id="concentracionDosis" 
-                        value={producto.concentracionDosis || ''} 
+                        value={formState.concentracionDosis || ''} 
+                        onChange={(e) => handleFormChange('concentracionDosis', e.target.value)}
+                        onSuggest={() => handleSuggestion('concentracion')}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="contenidoEnvase">Contenido del Envase</Label>
-                      <Input 
+                      <SuggestionInput 
                         id="contenidoEnvase" 
-                        value={producto.contenidoEnvase || ''} 
+                        value={formState.contenidoEnvase || ''} 
+                        onChange={(e) => handleFormChange('contenidoEnvase', e.target.value)}
+                        onSuggest={() => handleSuggestion('envase')}
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="viaAdministracion">Vía de Administración</Label>
-                      <Input 
-                        id="viaAdministracion" 
-                        value={producto.viaAdministracion || ''} 
+                      <SearchableSelect
+                        endpoint="/api/vias-administracion/activas"
+                        value={formState.viaAdministracionId || null}
+                        onChange={(value) => handleFormChange('viaAdministracionId', value)}
+                        placeholder="Seleccionar vía de administración..."
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="poblacionDiana">Población Diana</Label>
-                      <Input 
-                        id="poblacionDiana" 
-                        value={producto.poblacionDiana || ''} 
+                      <SearchableSelect
+                        endpoint="/api/poblaciones-diana/activas"
+                        value={formState.poblacionDianaId || null}
+                        onChange={(value) => handleFormChange('poblacionDianaId', value)}
+                        placeholder="Seleccionar población diana..."
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="tagsIndicaciones">Tags e Indicaciones</Label>
-                      <Textarea 
-                        id="tagsIndicaciones" 
-                        value={producto.tagsIndicaciones || ''} 
+                      <TagSelect
+                        key={`tags-${producto.codigoInterno}`}
+                        value={formState.tags || []}
+                        onChange={(tags) => {
+                          handleFormChange('tags', tags)
+                          setIsFormDirty(true)
+                        }}
+                        productId={producto.codigoInterno}
                       />
                     </div>
                   </CardContent>
@@ -435,34 +594,39 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                     <CardTitle>Información Regulatoria</CardTitle>
                     <CardDescription>Aspectos regulatorios y logísticos</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="paisFabricacion">País de Fabricación</Label>
-                      <Input 
-                        id="paisFabricacion" 
-                        value={producto.paisFabricacion} 
+                  <CardContent>
+                    <div className="space-y-6">
+                      {/* País de Fabricación */}
+                      <CountrySelect
+                        id="paisFabricacion"
+                        value={formState.paisFabricacion || 'EC'}
+                        onChange={(value) => handleFormChange('paisFabricacion', value || 'EC')}
+                        className="w-full lg:w-72"
                       />
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch 
-                        id="prescripcion" 
-                        checked={producto.requierePrescripcionMedica} 
-                      />
-                      <Label htmlFor="prescripcion">Requiere Prescripción Médica</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch 
-                        id="psicotropico" 
-                        checked={producto.esPsicotropico} 
-                      />
-                      <Label htmlFor="psicotropico">Es Psicotrópico</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch 
-                        id="cadenaDeFrio" 
-                        checked={producto.requiereCadenaDeFrio} 
-                      />
-                      <Label htmlFor="cadenaDeFrio">Requiere Cadena de Frío</Label>
+
+                      {/* Opciones Regulatorias */}
+                      <div className="divide-y divide-border">
+                        <ToggleRow
+                          id="requierePrescripcionMedica"
+                          label="Requiere Prescripción Médica"
+                          checked={formState.requierePrescripcionMedica}
+                          onCheckedChange={(checked) => handleFormChange('requierePrescripcionMedica', checked)}
+                        />
+
+                        <ToggleRow
+                          id="esPsicotropico"
+                          label="Es Psicotrópico"
+                          checked={formState.esPsicotropico}
+                          onCheckedChange={(checked) => handleFormChange('esPsicotropico', checked)}
+                        />
+
+                        <ToggleRow
+                          id="requiereCadenaDeFrio"
+                          label="Requiere Cadena de Frío"
+                          checked={formState.requiereCadenaDeFrio}
+                          onCheckedChange={(checked) => handleFormChange('requiereCadenaDeFrio', checked)}
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -475,33 +639,65 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                     <CardDescription>Información farmacológica detallada</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="principioActivo">Principio Activo</Label>
-                      <Textarea 
-                        id="principioActivo" 
-                        value={producto.principioActivo} 
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="posologia">Posología</Label>
-                      <Textarea 
-                        id="posologia" 
-                        value={producto.posologia} 
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="contraindicaciones">Contraindicaciones</Label>
-                      <Textarea 
-                        id="contraindicaciones" 
-                        value={producto.contraindicaciones} 
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="sustitutoSugerido">Sustituto Sugerido</Label>
-                      <Textarea 
-                        id="sustitutoSugerido" 
-                        value={producto.sustitutoSugerido} 
-                      />
+                    {/* Principio Activo */}
+                    <PrincipioActivoSelect
+                      value={formState.principioActivo || ''}
+                      onChange={(value) => handleFormChange('principioActivo', value)}
+                    />
+
+                    {/* Botón del Asistente - Solo visible si los campos principales están vacíos */}
+                    {(!formState.posologia || !formState.contraindicaciones || !formState.sustitutoSugerido) && (
+                      <div className="mb-4">
+                        <AssistantButton
+                          onClick={handleAssistantClick}
+                          isLoading={isAssistantLoading}
+                          isDisabled={!formState.principioActivo?.trim()}
+                        />
+                      </div>
+                    )}
+
+                    {/* Campos de Vademécum */}
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="posologia">Posología</Label>
+                        <Textarea 
+                          id="posologia" 
+                          value={formState.posologia || ''} 
+                          onChange={(e) => handleFormChange('posologia', e.target.value)}
+                          placeholder="Ingrese la posología..."
+                          className="min-h-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="contraindicaciones">Contraindicaciones</Label>
+                        <Textarea 
+                          id="contraindicaciones" 
+                          value={formState.contraindicaciones || ''} 
+                          onChange={(e) => handleFormChange('contraindicaciones', e.target.value)}
+                          placeholder="Ingrese las contraindicaciones..."
+                          className="min-h-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="sustitutoSugerido">Sustituto Sugerido</Label>
+                        <Textarea 
+                          id="sustitutoSugerido" 
+                          value={formState.sustitutoSugerido || ''} 
+                          onChange={(e) => handleFormChange('sustitutoSugerido', e.target.value)}
+                          placeholder="Ingrese el sustituto sugerido..."
+                          className="min-h-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="patologia">Patología</Label>
+                        <Textarea 
+                          id="patologia" 
+                          value={formState.patologia || ''} 
+                          onChange={(e) => handleFormChange('patologia', e.target.value)}
+                          placeholder="Ingrese la patología..."
+                          className="min-h-[100px]"
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -511,69 +707,27 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                 <Card>
                   <CardHeader>
                     <CardTitle>Galería de Imágenes</CardTitle>
-                    <CardDescription>Imágenes asociadas al producto</CardDescription>
+                    <CardDescription>
+                      Arrastra y suelta las imágenes para reordenarlas. 
+                      Haz clic en el botón + para agregar nuevas imágenes.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-3 gap-4">
-                      {images.length > 0 ? (
-                        images.map((image) => {
-                          console.log('Renderizando imagen:', image);
-                          return (
-                            <div 
-                              key={image.id} 
-                              className="relative aspect-square bg-white p-2 rounded-lg shadow-md hover:shadow-lg transition-shadow"
-                            >
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <img
-                                  src={image.rutaImagen}
-                                  alt={image.altText || `Imagen ${image.orden} del producto ${image.codigoInternoProducto}`}
-                                  className="max-w-full max-h-full object-contain rounded-lg"
-                                  onError={(e) => {
-                                    console.error('Error cargando imagen:', image.rutaImagen);
-                                    const target = e.target as HTMLImageElement;
-                                    target.src = '/placeholder.svg';
-                                    target.classList.add('opacity-50');
-                                    toast({
-                                      variant: "destructive",
-                                      title: "Error al cargar la imagen",
-                                      description: `No se pudo cargar la imagen ${image.orden} del producto ${image.codigoInternoProducto}`
-                                    });
-                                  }}
-                                  onLoad={() => console.log('Imagen cargada exitosamente:', image.rutaImagen)}
-                                />
-                              </div>
-                              <Badge 
-                                className="absolute top-2 right-2 bg-red-600 text-white" 
-                                variant="secondary"
-                              >
-                                {image.orden}
-                              </Badge>
-                              {/* Para depuración */}
-                              <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] p-1 break-all">
-                                Ruta: {image.rutaImagen}
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="col-span-3 p-8 text-center bg-white rounded-lg border-2 border-dashed border-gray-200">
-                          <div className="flex flex-col items-center gap-2">
-                            <img 
-                              src="/placeholder.svg" 
-                              alt="Sin imágenes" 
-                              className="w-24 h-24 opacity-50"
-                            />
-                            <p className="text-gray-500 mt-2">
-                              No hay imágenes disponibles para este producto
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <ImageGallery
+                      images={images}
+                      productId={formState.codigoInterno}
+                      onChange={(newImages) => {
+                        setImages(newImages)
+                        setIsFormDirty(true)
+                      }}
+                      className="w-full"
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>
-            </ScrollArea>
+                </div>
+              </ScrollArea>
+            </div>
           </Tabs>
         </div>
       </DialogContent>
