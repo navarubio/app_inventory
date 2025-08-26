@@ -46,6 +46,12 @@ interface ProductFormState {
   specific1Id: number | null
   specific2Id: number | null
   
+  // Nombres de categorías (para mostrar en UI)
+  categoriaPrincipal: string | null
+  subcategoria1: string | null
+  subcategoria2: string | null
+  subcategoria3: string | null
+  
   // Atributos de Filtro
   formaFarmaceuticaId: number | null
   formaFarmaceutica: string | null
@@ -69,6 +75,12 @@ interface ProductFormState {
   posologia: string
   contraindicaciones: string
   sustitutoSugerido: string
+  
+  // Metadatos
+  nivelCompletacion?: number
+  fechaCreacionRegistro?: string
+  fechaUltimaModificacion?: string | null
+  usuarioUltimaModificacion?: string | null
 }
 
 interface ProductoDetalleProps {
@@ -86,238 +98,20 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
   const [isFormDirty, setIsFormDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isAssistantLoading, setIsAssistantLoading] = useState(false)
-  const [currentCompletionLevel, setCurrentCompletionLevel] = useState(0)
-
-  // Estados para las opciones de los selectores (necesario para conversión ID ↔ Nombre)
-  const [formaFarmaceuticaOptions, setFormaFarmaceuticaOptions] = useState<{id: number, nombre: string}[]>([])
-  const [viaAdministracionOptions, setViaAdministracionOptions] = useState<{id: number, nombre: string}[]>([])
-  const [poblacionDianaOptions, setPoblacionDianaOptions] = useState<{id: number, nombre: string}[]>([])
-  
-  // Estados para las opciones de categorización
-  const [categoriaOptions, setCategoriaOptions] = useState<{id: number, nombre: string}[]>([])
-  const [subcategoriaOptions, setSubcategoriaOptions] = useState<{id: number, nombre: string}[]>([])
-  const [specific1Options, setSpecific1Options] = useState<{id: number, nombre: string}[]>([])
-  const [specific2Options, setSpecific2Options] = useState<{id: number, nombre: string}[]>([])
-
-  // Estado para controlar si las opciones están cargadas
-  const [optionsLoaded, setOptionsLoaded] = useState(false)
-
-  // URL base del servidor
-  const SERVER_URL = 'http://10.10.10.251'
-
-  // Cargar opciones de los selectores al montar el componente
-  useEffect(() => {
-    const loadSelectOptions = async () => {
-      try {
-        const [formasResp, viasResp, poblacionesResp, categoriasResp] = await Promise.all([
-          fetch(`${SERVER_URL}:8890/api/formas-farmaceuticas/activas`),
-          fetch(`${SERVER_URL}:8890/api/vias-administracion/activas`),
-          fetch(`${SERVER_URL}:8890/api/poblaciones-diana/activas`),
-          fetch(`${SERVER_URL}:8890/api/categories/list`) // Endpoint correcto encontrado
-        ])
-
-        if (formasResp.ok) {
-          const formasData = await formasResp.json()
-          setFormaFarmaceuticaOptions(formasData)
-          console.log('🔧 Formas farmacéuticas cargadas:', formasData)
-        }
-        
-        if (viasResp.ok) {
-          const viasData = await viasResp.json()
-          setViaAdministracionOptions(viasData)
-          console.log('🔧 Vías de administración cargadas:', viasData)
-        }
-        
-        if (poblacionesResp.ok) {
-          const poblacionesData = await poblacionesResp.json()
-          setPoblacionDianaOptions(poblacionesData)
-          console.log('🔧 Poblaciones diana cargadas:', poblacionesData)
-        }
-
-        if (categoriasResp.ok) {
-          const categoriasData = await categoriasResp.json()
-          setCategoriaOptions(categoriasData)
-          console.log('🔧 Categorías principales cargadas:', categoriasData)
-        }
-
-        // Cargar todas las subcategorías y específicas para poder hacer el mapeo
-        // Usar endpoints similares a los que usa CategoriaSelector
-        try {
-          // Probar diferentes endpoints para obtener todas las opciones
-          const allSubcategoriesResp = await fetch(`${SERVER_URL}:8890/api/subcategories/list`)
-          const allSpecific1Resp = await fetch(`${SERVER_URL}:8890/api/specific1/list`)
-          const allSpecific2Resp = await fetch(`${SERVER_URL}:8890/api/specific2/list`)
-
-          if (allSubcategoriesResp.ok) {
-            const subcategoriesData = await allSubcategoriesResp.json()
-            setSubcategoriaOptions(subcategoriesData)
-            console.log('🔧 Todas las subcategorías cargadas:', subcategoriesData.length, 'opciones')
-          } else {
-            console.log('⚠️ Endpoint /api/subcategories/list no disponible')
-          }
-
-          if (allSpecific1Resp.ok) {
-            const specific1Data = await allSpecific1Resp.json()
-            setSpecific1Options(specific1Data)
-            console.log('🔧 Todas las specific1 cargadas:', specific1Data.length, 'opciones')
-          } else {
-            console.log('⚠️ Endpoint /api/specific1/list no disponible')
-          }
-
-          if (allSpecific2Resp.ok) {
-            const specific2Data = await allSpecific2Resp.json()
-            setSpecific2Options(specific2Data)
-            console.log('🔧 Todas las specific2 cargadas:', specific2Data.length, 'opciones')
-          } else {
-            console.log('⚠️ Endpoint /api/specific2/list no disponible')
-          }
-        } catch (error) {
-          console.log('⚠️ Algunos endpoints de categorización no están disponibles:', error)
-          // No es crítico, continuamos sin estos datos
-        }
-
-        // Marcar las opciones como cargadas
-        setOptionsLoaded(true)
-        console.log('✅ Todas las opciones de selectores cargadas')
-        
-      } catch (error) {
-        console.error('Error cargando opciones de selectores:', error)
-        setOptionsLoaded(true) // Marcar como cargado aunque haya errores
-      }
-    }
-
-    loadSelectOptions()
-  }, [])
-
-  // Función para mapear datos del backend al formato del frontend
-  const mapBackendToFrontend = (backendProduct: any) => {
-    console.log('🔄 Mapeando datos del backend al frontend...')
-    console.log('📥 Datos recibidos del backend:', backendProduct)
-    console.log('🔧 Opciones disponibles:')
-    console.log('- formaFarmaceuticaOptions:', formaFarmaceuticaOptions.length)
-    console.log('- viaAdministracionOptions:', viaAdministracionOptions.length)
-    console.log('- poblacionDianaOptions:', poblacionDianaOptions.length)
-    console.log('- categoriaOptions:', categoriaOptions.length)
-    console.log('- subcategoriaOptions:', subcategoriaOptions.length)
-    
-    // Usar las opciones cargadas para hacer la conversión Nombre → ID
-    const getIdByNombre = (opciones: {id: number, nombre: string}[], nombre: string | null): number | null => {
-      if (!nombre || opciones.length === 0) {
-        console.log(`⚠️ No se puede mapear "${nombre}" - opciones vacías o nombre nulo`)
-        return null
-      }
-      const opcion = opciones.find(opt => opt.nombre.toLowerCase().trim() === nombre.toLowerCase().trim())
-      console.log(`🔍 Mapeando "${nombre}" →`, opcion ? `ID: ${opcion.id}` : 'NO ENCONTRADO')
-      return opcion ? opcion.id : null
-    }
-
-    // Convertir tags de string a array (si existe) - IDs se resolverán en TagSelect
-    let tags = []
-    if (backendProduct.tagsIndicaciones && backendProduct.tagsIndicaciones.trim()) {
-      console.log('🏷️ Tags recibidos del backend:', backendProduct.tagsIndicaciones)
-      const tagNames = backendProduct.tagsIndicaciones.split(',')
-      tags = tagNames.map((name: string) => ({
-        id: null, // TagSelect resolverá los IDs al cargar
-        nombre: name.trim()
-      })).filter(tag => tag.nombre.length > 0)
-      console.log('🏷️ Tags convertidos para frontend:', tags)
-    }
-
-    const mappedProduct = {
-      ...backendProduct,
-      // === MAPEOS DE CAMPOS CRÍTICOS (usando opciones dinámicas) ===
-      // Backend usa "formaFarmaceutica" (string) -> Frontend necesita "formaFarmaceuticaId" (number)
-      formaFarmaceuticaId: getIdByNombre(formaFarmaceuticaOptions, backendProduct.formaFarmaceutica),
-      
-      // Backend usa "viaAdministracion" (string) -> Frontend necesita "viaAdministracionId" (number)  
-      viaAdministracionId: getIdByNombre(viaAdministracionOptions, backendProduct.viaAdministracion),
-      
-      // Backend usa "poblacionDiana" (string) -> Frontend necesita "poblacionDianaId" (number)
-      poblacionDianaId: getIdByNombre(poblacionDianaOptions, backendProduct.poblacionDiana),
-      
-      // Backend usa "concentracionDosis" -> Frontend necesita "concentracionDosis" (mismo nombre)
-      concentracionDosis: backendProduct.concentracionDosis || null,
-      
-      // Backend usa "tagsIndicaciones" (string) -> Frontend necesita "tags" (array)
-      tags: tags,
-
-      // === DEBUG: Verificar tags en el resultado final ===
-      _debugTags: {
-        original: backendProduct.tagsIndicaciones,
-        converted: tags,
-        count: tags.length
-      },
-
-      // === MAPEOS DE CATEGORIZACIÓN ===
-      // Priorizar IDs existentes sobre campos de texto null
-      // Si categoriaPrincipal es null, usar categoryId para obtener el ID
-      categoryId: backendProduct.categoryId || getIdByNombre(categoriaOptions, backendProduct.categoriaPrincipal),
-      
-      // Si subcategoria1 es null, usar subcategoryId 
-      subcategoryId: backendProduct.subcategoryId || getIdByNombre(subcategoriaOptions, backendProduct.subcategoria1),
-      
-      // Si subcategoria2 es null, usar specific1Id
-      specific1Id: backendProduct.specific1Id || getIdByNombre(specific1Options, backendProduct.subcategoria2),
-      
-      // Si subcategoria3 es null, usar specific2Id
-      specific2Id: backendProduct.specific2Id || getIdByNombre(specific2Options, backendProduct.subcategoria3),
-
-      // === PRESERVAR CAMPOS ORIGINALES PARA DEBUGGING ===
-      _originalFormaFarmaceutica: backendProduct.formaFarmaceutica,
-      _originalViaAdministracion: backendProduct.viaAdministracion,
-      _originalPoblacionDiana: backendProduct.poblacionDiana,
-      _originalTagsIndicaciones: backendProduct.tagsIndicaciones,
-      _originalCategoriaPrincipal: backendProduct.categoriaPrincipal,
-      _originalSubcategoria1: backendProduct.subcategoria1,
-      _originalSubcategoria2: backendProduct.subcategoria2,
-      _originalSubcategoria3: backendProduct.subcategoria3
-    }
-
-    console.log('📤 Producto mapeado para frontend:', {
-      formaFarmaceuticaId: mappedProduct.formaFarmaceuticaId,
-      viaAdministracionId: mappedProduct.viaAdministracionId,
-      poblacionDianaId: mappedProduct.poblacionDianaId,
-      concentracionDosis: mappedProduct.concentracionDosis,
-      tags: mappedProduct.tags
-    })
-
-    return mappedProduct
-  }
 
   // Efecto para inicializar el formulario solo cuando cambia el código interno del producto
-  // COMENTADO TEMPORALMENTE - La lógica se consolidó en el useEffect de abajo
-  /*
   useEffect(() => {
     if (producto?.codigoInterno) {
-      console.log('🔄 Inicializando FormState con datos del producto:')
-      console.log('📦 Datos completos del producto recibido:', producto)
-      console.log('🔧 Campos específicos de atributos (ANTES del mapeo):')
-      console.log('- formaFarmaceuticaId:', producto.formaFarmaceuticaId)
-      console.log('- viaAdministracionId:', producto.viaAdministracionId)
-      console.log('- poblacionDianaId:', producto.poblacionDianaId)
-      console.log('- tags:', producto.tags)
-      
-      // Mapear datos del backend al frontend
-      const mappedProduct = mapBackendToFrontend(producto)
-      
-      console.log('🔄 Después del mapeo:')
-      console.log('- formaFarmaceuticaId:', mappedProduct.formaFarmaceuticaId)
-      console.log('- viaAdministracionId:', mappedProduct.viaAdministracionId)
-      console.log('- poblacionDianaId:', mappedProduct.poblacionDianaId)
-      console.log('- tags:', mappedProduct.tags)
-      
       setFormState(prevState => {
         // Solo actualizar si el código interno es diferente
         if (prevState.codigoInterno !== producto.codigoInterno) {
-          console.log('📝 Nuevo FormState establecido:', mappedProduct)
-          return mappedProduct
+          return { ...producto }
         }
         return prevState
       })
       setIsFormDirty(false) // Resetear el estado de modificación
     }
   }, [producto.codigoInterno])
-  */
 
   // Efecto para limpiar campos del Vademécum cuando se limpia principio activo
   useEffect(() => {
@@ -436,52 +230,24 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
   })
 
   // Efecto para resetear el estado cuando cambia el producto o se abre/cierra el modal
-  // PERO SOLO después de que las opciones estén cargadas
   useEffect(() => {
-    if (!optionsLoaded || !producto?.codigoInterno) {
-      console.log('⏳ Esperando opciones o producto...', { optionsLoaded, codigoInterno: producto?.codigoInterno })
-      return
-    }
-
-    console.log('🔄 Reseteando estado para producto:', producto.codigoInterno)
-    console.log('✅ Opciones disponibles para mapeo')
-    console.log('📦 Datos recibidos del backend:', {
-      codigoInterno: producto.codigoInterno,
-      tagsIndicaciones: (producto as any).tagsIndicaciones,
-      tags: producto.tags
-    })
-    
-    // Mapear los datos del backend al formato del frontend antes de inicializar el estado
-    const mappedProduct = mapBackendToFrontend(producto)
-    console.log('🔧 Producto mapeado para formState:', mappedProduct)
-    console.log('🏷️ Debug tags específicamente:', {
-      originalTagsIndicaciones: (producto as any).tagsIndicaciones,
-      mappedTags: mappedProduct.tags,
-      tagsCount: mappedProduct.tags?.length || 0,
-      debugInfo: mappedProduct._debugTags
-    })
-    
+    console.log('Reseteando estado para producto:', producto.codigoInterno)
     setFormState({ 
-      ...mappedProduct,
+      ...producto,
       // Asegurar valores por defecto para campos regulatorios
-      paisFabricacion: mappedProduct.paisFabricacion || 'EC',
-      requierePrescripcionMedica: mappedProduct.requierePrescripcionMedica || false,
-      esPsicotropico: mappedProduct.esPsicotropico || false,
-      requiereCadenaDeFrio: mappedProduct.requiereCadenaDeFrio || false,
+      paisFabricacion: producto.paisFabricacion || 'EC',
+      requierePrescripcionMedica: producto.requierePrescripcionMedica || false,
+      esPsicotropico: producto.esPsicotropico || false,
+      requiereCadenaDeFrio: producto.requiereCadenaDeFrio || false,
     })
     setCategorization({
-      categoryId: mappedProduct.categoryId || null,
-      subcategoryId: mappedProduct.subcategoryId || null,
-      specific1Id: mappedProduct.specific1Id || null,
-      specific2Id: mappedProduct.specific2Id || null,
+      categoryId: producto.categoryId || null,
+      subcategoryId: producto.subcategoryId || null,
+      specific1Id: producto.specific1Id || null,
+      specific2Id: producto.specific2Id || null,
     })
     setIsFormDirty(false)
-    
-    // Calcular nivel inicial de completación después de cargar datos
-    setTimeout(() => {
-      updateCompletionLevel()
-    }, 100) // Pequeño delay para asegurar que el estado esté actualizado
-  }, [producto.codigoInterno, open, optionsLoaded]) // Agregamos optionsLoaded como dependencia
+  }, [producto.codigoInterno, open])
 
   // Función para manejar cambios en el formulario
   const handleFormChange = (field: keyof ProductFormState, value: any) => {
@@ -494,314 +260,568 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
     })
   }
 
-  // Función para actualizar el nivel de completación en tiempo real
-  const updateCompletionLevel = () => {
-    try {
-      const level = calculateCompletionLevel()
-      setCurrentCompletionLevel(level)
-    } catch (error) {
-      console.error('Error calculando nivel de completación:', error)
+  // Función para resolver nombres de categorías desde los IDs
+  const resolveCategoryNames = async (categoryId: number | null, subcategoryId: number | null, specific1Id: number | null, specific2Id: number | null) => {
+    const names = {
+      categoriaPrincipal: null as string | null,
+      subcategoria1: null as string | null,
+      subcategoria2: null as string | null,
+      subcategoria3: null as string | null
     }
+
+    try {
+      // Esta función debería obtener los nombres desde la API
+      // Por ahora usamos mapeo básico de los valores conocidos
+      const categoryMap: Record<number, string> = {
+        1: "CONSUMO",
+        2: "FARMACOS", 
+        3: "DISPOSITIVOS MEDICOS",
+        6: "EQUIPOS"
+      }
+
+      const subcategoryMap: Record<number, string> = {
+        1: "TRATAMIENTOS Y SALUD",
+        6: "CIRCULATORIO",
+        2: "NUTRICION",
+        3: "CUIDADO PERSONAL"
+      }
+
+      if (categoryId) {
+        names.categoriaPrincipal = categoryMap[categoryId] || null
+      }
+      if (subcategoryId) {
+        names.subcategoria1 = subcategoryMap[subcategoryId] || null
+      }
+      
+      // TODO: Implementar resolución completa desde API
+      
+    } catch (error) {
+      console.warn('⚠️ Error resolviendo nombres de categorías:', error)
+    }
+
+    return names
   }
 
-  // Actualizar nivel de completación cuando cambien los datos
-  useEffect(() => {
-    if (optionsLoaded && formState.codigoInterno) {
-      updateCompletionLevel()
-    }
-  }, [formState, images, categorization, optionsLoaded])
+  // Función para resolver nombres de atributos desde los IDs
+  const resolveAttributeNames = (formState: ProductFormState) => {
+    const resolved = { ...formState }
 
-  // Función para calcular el nivel de completación del producto
-  const calculateCompletionLevel = () => {
-    let nivel = 0;
-    let factors = [];
+    // Mapeos básicos (TODO: obtener desde API)
+    const formaFarmaceuticaMap: Record<number, string> = {
+      1: "Tableta",
+      2: "Cápsula", 
+      3: "Gel",
+      4: "Crema",
+      5: "Solución"
+    }
+
+    const viaAdministracionMap: Record<number, string> = {
+      1: "Tópica",
+      2: "Oral",
+      3: "Intravenosa",
+      4: "Intramuscular",
+      5: "Sublingual"
+    }
+
+    const poblacionDianaMap: Record<number, string> = {
+      1: "Adultos",
+      2: "Pediátrica",
+      3: "Geriátrica",
+      4: "Embarazadas"
+    }
+
+    // Resolver nombres si tenemos los IDs
+    if (resolved.formaFarmaceuticaId && !resolved.formaFarmaceutica) {
+      resolved.formaFarmaceutica = formaFarmaceuticaMap[resolved.formaFarmaceuticaId] || null
+    }
+
+    if (resolved.viaAdministracionId && !resolved.viaAdministracion) {
+      resolved.viaAdministracion = viaAdministracionMap[resolved.viaAdministracionId] || null
+    }
+
+    if (resolved.poblacionDianaId && !resolved.poblacionDiana) {
+      resolved.poblacionDiana = poblacionDianaMap[resolved.poblacionDianaId] || null
+    }
+
+    return resolved
+  }
+  
+  // Nueva función mejorada con resolución de nombres
+  const preparePayloadForSaveImproved = async () => {
+    console.log('🔍 Estado actual del formulario:', formState)
+    console.log('🔍 Estado de categorización:', categorization) 
+    console.log('🖼️ Imágenes actuales:', images)
+
+    // Resolver nombres de atributos
+    const resolvedFormState = resolveAttributeNames(formState)
     
-    // === NIVEL BASE (20%) ===
-    // Datos básicos siempre deben estar (código, nombre, laboratorio)
-    const hasBasicData = formState.codigoInterno && formState.nombreProducto && formState.laboratorio;
-    if (hasBasicData) {
-      nivel = 20;
-      factors.push('✅ Datos básicos');
-    } else {
-      factors.push('❌ Datos básicos');
+    // Resolver nombres de categorías
+    const categoryNames = await resolveCategoryNames(
+      categorization.categoryId,
+      categorization.subcategoryId,
+      categorization.specific1Id,
+      categorization.specific2Id
+    )
+
+    // Preparar el payload con todos los datos (mapeo para backend)
+    const payload = {
+      // === DATOS INMUTABLES ===
+      codigoInterno: resolvedFormState.codigoInterno,
+      upc: resolvedFormState.upc || null,
+      nombre: resolvedFormState.nombreProducto, // Backend espera 'nombre'
+      descripcion: resolvedFormState.nombreProducto || null, // Usar nombre como descripción por ahora
+      laboratorio: resolvedFormState.laboratorio || null,
+      categoriaOriginal: resolvedFormState.categoriaOriginal || null,
+      presentacionOriginal: resolvedFormState.presentacionOriginal || null,
+      nivelCompletacion: parseInt(resolvedFormState.nivelCompletacion?.toString() || '0'),
+      fechaCreacionRegistro: resolvedFormState.fechaCreacionRegistro,
+
+      // === TAB 1: CATEGORIZACIÓN ===
+      categoryId: parseInt(categorization.categoryId?.toString() || '0'),
+      subcategoryId: categorization.subcategoryId ? parseInt(categorization.subcategoryId.toString()) : null,
+      specific1Id: categorization.specific1Id ? parseInt(categorization.specific1Id.toString()) : null,
+      specific2Id: categorization.specific2Id ? parseInt(categorization.specific2Id.toString()) : null,
+      categoriaPrincipal: categoryNames.categoriaPrincipal || null,
+      subcategoria1: categoryNames.subcategoria1 || null,
+      subcategoria2: categoryNames.subcategoria2 || null,
+      subcategoria3: categoryNames.subcategoria3 || null,
+
+      // === TAB 2: ATRIBUTOS DE FILTRO ===
+      principioActivo: resolvedFormState.principioActivo || null,
+      concentracion: resolvedFormState.concentracionDosis || null, // Backend espera 'concentracion'
+      formaFarmaceuticaId: resolvedFormState.formaFarmaceuticaId ? parseInt(resolvedFormState.formaFarmaceuticaId.toString()) : null,
+      contenidoEnvase: resolvedFormState.contenidoEnvase || null,
+      viaAdministracionId: resolvedFormState.viaAdministracionId ? parseInt(resolvedFormState.viaAdministracionId.toString()) : null,
+      poblacionDianaId: resolvedFormState.poblacionDianaId ? parseInt(resolvedFormState.poblacionDianaId.toString()) : null,
+      // Convertir tags a array de IDs (si los tenemos)
+      tagIds: resolvedFormState.tags && resolvedFormState.tags.length > 0 
+        ? resolvedFormState.tags.map(tag => parseInt(tag.id?.toString() || '0')).filter(id => id > 0)
+        : [],
+
+      // === TAB 3: REGULATORIOS ===
+      paisFabricacion: resolvedFormState.paisFabricacion || 'EC',
+      requierePrescripcionMedica: Boolean(resolvedFormState.requierePrescripcionMedica),
+      esPsicotropico: Boolean(resolvedFormState.esPsicotropico),
+      requiereCadenaDeFrio: Boolean(resolvedFormState.requiereCadenaDeFrio),
+
+      // === TAB 4: VADEMÉCUM (campos adicionales) ===
+      patologia: resolvedFormState.patologia || null,
+      posologia: resolvedFormState.posologia || null,
+      contraindicaciones: resolvedFormState.contraindicaciones || null,
+      sustitutoSugerido: resolvedFormState.sustitutoSugerido || null,
+
+      // === CAMPOS ADICIONALES QUE PUEDE ESPERAR EL BACKEND ===
+      activo: true, // Asumir que está activo
+      stock: 0, // Campo requerido por backend pero no manejado en UI
+      stockMinimo: 0, // Campo requerido por backend pero no manejado en UI
+      precio: 0.0, // Campo requerido por backend pero no manejado en UI
+      costo: 0.0, // Campo requerido por backend pero no manejado en UI
+
+      // === METADATOS AUTOMÁTICOS ===
+      fechaUltimaModificacion: new Date().toISOString(),
+      usuarioUltimaModificacion: 'admin'
     }
 
-    // === NIVEL 40% - Categorización completa ===
-    const hasFullCategorization = categorization.categoryId && categorization.subcategoryId && 
-        categorization.specific1Id && categorization.specific2Id;
-    if (hasFullCategorization) {
-      nivel = 40;
-      factors.push('✅ Categorización completa');
-    } else {
-      // Categorización parcial puede dar puntos intermedios
-      const partialCat = (categorization.categoryId ? 1 : 0) + 
-                        (categorization.subcategoryId ? 1 : 0) + 
-                        (categorization.specific1Id ? 1 : 0) + 
-                        (categorization.specific2Id ? 1 : 0);
-      if (partialCat > 0 && nivel >= 20) {
-        nivel = 20 + (partialCat * 5); // 25%, 30%, 35% según categorías completas
-        factors.push(`🟡 Categorización parcial (${partialCat}/4)`);
-      } else {
-        factors.push('❌ Categorización incompleta');
-      }
-    }
+    console.log('📦 Payload preparado con resolución completa:', payload)
+    return payload
+  }
 
-    // === NIVEL 60% - Atributos de filtro completos ===
-    const hasAllAttributes = formState.formaFarmaceuticaId && formState.concentracionDosis && 
-        formState.contenidoEnvase && formState.viaAdministracionId && 
-        formState.poblacionDianaId && formState.tags && formState.tags.length > 0;
+  // Función de payload simplificado para pruebas
+  const prepareSimplifiedPayload = () => {
+    console.log('🔍 Preparando payload simplificado para pruebas...')
     
-    if (hasAllAttributes && nivel >= 35) { // Permitir si tiene al menos categorización parcial
-      nivel = 60;
-      factors.push('✅ Atributos completos');
-    } else if (nivel >= 35) {
-      // Atributos parciales
-      const attributeCount = (formState.formaFarmaceuticaId ? 1 : 0) + 
-                            (formState.concentracionDosis ? 1 : 0) + 
-                            (formState.contenidoEnvase ? 1 : 0) + 
-                            (formState.viaAdministracionId ? 1 : 0) + 
-                            (formState.poblacionDianaId ? 1 : 0) + 
-                            (formState.tags && formState.tags.length > 0 ? 1 : 0);
-      if (attributeCount > 0) {
-        nivel = Math.max(nivel, 40 + (attributeCount * 3)); // Hasta 58% con atributos parciales
-        factors.push(`🟡 Atributos parciales (${attributeCount}/6)`);
-      } else {
-        factors.push('❌ Atributos incompletos');
-      }
-    } else {
-      factors.push('❌ Atributos incompletos');
+    const payload = {
+      codigoInterno: formState.codigoInterno,
+      nombre: formState.nombreProducto,
+      laboratorio: formState.laboratorio,
+      categoryId: categorization.categoryId,
+      principioActivo: formState.principioActivo,
+      concentracion: formState.concentracionDosis,
+      activo: true,
+      fechaUltimaModificacion: new Date().toISOString()
     }
 
-    // === NIVEL 80% - Vademécum completo ===
-    const hasFullVademecum = formState.patologia && formState.posologia && 
-        formState.contraindicaciones && formState.sustitutoSugerido;
-    
-    if (hasFullVademecum && nivel >= 50) { // Permitir si tiene atributos parciales
-      nivel = 80;
-      factors.push('✅ Vademécum completo');
-    } else if (nivel >= 50) {
-      // Vademécum parcial
-      const vademecumCount = (formState.patologia ? 1 : 0) + 
-                            (formState.posologia ? 1 : 0) + 
-                            (formState.contraindicaciones ? 1 : 0) + 
-                            (formState.sustitutoSugerido ? 1 : 0);
-      if (vademecumCount > 0) {
-        nivel = Math.max(nivel, 60 + (vademecumCount * 5)); // Hasta 80% con vademécum parcial
-        factors.push(`🟡 Vademécum parcial (${vademecumCount}/4)`);
-      } else {
-        factors.push('❌ Vademécum vacío');
-      }
-    } else {
-      factors.push('❌ Vademécum vacío');
-    }
-
-    // === NIVEL 100% - Imágenes agregadas ===
-    if (images.length > 0 && nivel >= 70) { // Permitir si tiene al menos vademécum parcial
-      nivel = 100;
-      factors.push(`✅ Imágenes agregadas (${images.length})`);
-    } else {
-      factors.push(`❌ Sin imágenes (${images.length})`);
-    }
-
-    console.log('📊 Nivel de completación calculado:', nivel + '%');
-    console.log('🔍 Factores de completación:', factors);
-
-    return nivel;
+    console.log('📦 Payload simplificado:', payload)
+    return payload
   }
 
   // Función de payload completo mejorado (progresivo)
   const prepareCompletePayload = async () => {
     console.log('🔍 Preparando payload completo mejorado...')
-    console.log('📋 FormState completo:', formState)
-    console.log('🏷️ Categorization:', categorization)
-
-    // Función para convertir ID a nombre usando las opciones cargadas
-    const getNombreById = (opciones: {id: number, nombre: string}[], id: number | null): string | null => {
-      if (!id || opciones.length === 0) {
-        if (id) console.log(`⚠️ No se puede convertir ID ${id} - opciones vacías (${opciones.length} opciones)`)
-        return null
-      }
-      const opcion = opciones.find(opt => opt.id === id)
-      if (opcion) {
-        console.log(`✅ Convirtiendo ID ${id} → "${opcion.nombre}"`)
-      } else {
-        console.log(`❌ ID ${id} NO ENCONTRADO en ${opciones.length} opciones`)
-      }
-      return opcion ? opcion.nombre : null
-    }
+    
+    // Resolver nombres de atributos
+    const resolvedFormState = resolveAttributeNames(formState)
+    
+    // Resolver nombres de categorías
+    const categoryNames = await resolveCategoryNames(
+      categorization.categoryId,
+      categorization.subcategoryId,
+      categorization.specific1Id,
+      categorization.specific2Id
+    )
 
     // Payload completo pero con campos validados
     const payload = {
       // === CAMPOS BÁSICOS (ya probados que funcionan) ===
-      codigoInterno: formState.codigoInterno,
-      nombre: formState.nombreProducto,
-      laboratorio: formState.laboratorio || null,
-      principioActivo: formState.principioActivo || null,
-      concentracion: formState.concentracionDosis || null,
+      codigoInterno: resolvedFormState.codigoInterno,
+      nombre: resolvedFormState.nombreProducto,
+      laboratorio: resolvedFormState.laboratorio || null,
+      categoryId: parseInt(categorization.categoryId?.toString() || '0'),
+      principioActivo: resolvedFormState.principioActivo || null,
+      concentracion: resolvedFormState.concentracionDosis || null,
       activo: true,
       fechaUltimaModificacion: new Date().toISOString(),
 
       // === CAMPOS ADICIONALES VALIDADOS ===
-      upc: formState.upc || null,
-      descripcion: formState.nombreProducto || null,
+      upc: resolvedFormState.upc || null,
+      descripcion: resolvedFormState.nombreProducto || null,
       
-      // === CAMPOS DE CATEGORIZACIÓN (convertir ID → Nombre para la BD) ===
-      // Intentar obtener nombres desde IDs, con fallback a null si no se encuentra
-      categoriaPrincipal: getNombreById(categoriaOptions, categorization.categoryId) || null,
-      subcategoria1: getNombreById(subcategoriaOptions, categorization.subcategoryId) || null,
-      subcategoria2: getNombreById(specific1Options, categorization.specific1Id) || null,
-      subcategoria3: getNombreById(specific2Options, categorization.specific2Id) || null,
+      // Solo incluir subcategorías si tienen valores válidos
+      ...(categorization.subcategoryId && { 
+        subcategoryId: parseInt(categorization.subcategoryId.toString()) 
+      }),
+      ...(categorization.specific1Id && { 
+        specific1Id: parseInt(categorization.specific1Id.toString()) 
+      }),
+      ...(categorization.specific2Id && { 
+        specific2Id: parseInt(categorization.specific2Id.toString()) 
+      }),
 
-      // === MANTENER IDs PARA BACKWARD COMPATIBILITY (siempre incluir) ===
-      categoryId: categorization.categoryId || null,
-      subcategoryId: categorization.subcategoryId || null,
-      specific1Id: categorization.specific1Id || null,
-      specific2Id: categorization.specific2Id || null,
+      // Campos de atributos solo si tienen valores
+      ...(resolvedFormState.formaFarmaceuticaId && { 
+        formaFarmaceuticaId: parseInt(resolvedFormState.formaFarmaceuticaId.toString()) 
+      }),
+      ...(resolvedFormState.contenidoEnvase && { 
+        contenidoEnvase: resolvedFormState.contenidoEnvase 
+      }),
+      ...(resolvedFormState.viaAdministracionId && { 
+        viaAdministracionId: parseInt(resolvedFormState.viaAdministracionId.toString()) 
+      }),
+      ...(resolvedFormState.poblacionDianaId && { 
+        poblacionDianaId: parseInt(resolvedFormState.poblacionDianaId.toString()) 
+      }),
 
-      // === CAMPOS DE ATRIBUTOS (convertir ID → Nombre para la BD) ===
-      formaFarmaceutica: getNombreById(formaFarmaceuticaOptions, formState.formaFarmaceuticaId),
-      contenidoEnvase: formState.contenidoEnvase || null,
-      viaAdministracion: getNombreById(viaAdministracionOptions, formState.viaAdministracionId),
-      poblacionDiana: getNombreById(poblacionDianaOptions, formState.poblacionDianaId),
-      concentracionDosis: formState.concentracionDosis || null,
-
-      // === TAGS (convertir array a string separado por comas) ===
-      tagsIndicaciones: formState.tags && formState.tags.length > 0 
-        ? formState.tags.map(tag => tag.nombre).join(', ') 
-        : null,
-
-      // === MANTENER tagIds PARA BACKWARD COMPATIBILITY ===
-      ...(formState.tags && formState.tags.length > 0 && {
-        tagIds: formState.tags.map(tag => parseInt(tag.id?.toString() || '0')).filter(id => id > 0)
+      // Tags solo si hay elementos válidos
+      ...(resolvedFormState.tags && resolvedFormState.tags.length > 0 && {
+        tagIds: resolvedFormState.tags.map(tag => parseInt(tag.id?.toString() || '0')).filter(id => id > 0)
       }),
 
       // Campos regulatorios
+      paisFabricacion: resolvedFormState.paisFabricacion || 'EC',
+      requierePrescripcionMedica: Boolean(resolvedFormState.requierePrescripcionMedica),
+      esPsicotropico: Boolean(resolvedFormState.esPsicotropico),
+      requiereCadenaDeFrio: Boolean(resolvedFormState.requiereCadenaDeFrio),
+
+      // Campos de vademécum solo si tienen contenido
+      ...(resolvedFormState.patologia && { patologia: resolvedFormState.patologia }),
+      ...(resolvedFormState.posologia && { posologia: resolvedFormState.posologia }),
+      ...(resolvedFormState.contraindicaciones && { contraindicaciones: resolvedFormState.contraindicaciones }),
+      ...(resolvedFormState.sustitutoSugerido && { sustitutoSugerido: resolvedFormState.sustitutoSugerido }),
+
+      // Metadatos del sistema
+      usuarioUltimaModificacion: 'admin'
+    }
+
+    console.log('📦 Payload completo mejorado preparado:', payload)
+    return payload
+  }
+  const preparePayloadForSave = () => {
+    console.log('🔍 Estado actual del formulario:', formState)
+    console.log('� Estado de categorización:', categorization)
+    console.log('�🖼️ Imágenes actuales:', images)
+
+    // Preparar el payload con todos los datos
+    const payload = {
+      // === DATOS INMUTABLES ===
+      codigoInterno: formState.codigoInterno,
+      upc: formState.upc,
+      nombreProducto: formState.nombreProducto,
+      presentacionOriginal: formState.presentacionOriginal,
+      laboratorio: formState.laboratorio,
+      categoriaOriginal: formState.categoriaOriginal,
+      nivelCompletacion: formState.nivelCompletacion,
+      fechaCreacionRegistro: formState.fechaCreacionRegistro,
+
+      // === TAB 1: CATEGORIZACIÓN (desde estado categorization) ===
+      categoryId: categorization.categoryId,
+      subcategoryId: categorization.subcategoryId,
+      specific1Id: categorization.specific1Id,
+      specific2Id: categorization.specific2Id,
+      categoriaPrincipal: formState.categoriaPrincipal || null,
+      subcategoria1: formState.subcategoria1 || null,
+      subcategoria2: formState.subcategoria2 || null,
+      subcategoria3: formState.subcategoria3 || null,
+
+      // === TAB 2: ATRIBUTOS DE FILTRO ===
+      formaFarmaceutica: formState.formaFarmaceutica || null,
+      concentracionDosis: formState.concentracionDosis || null,
+      contenidoEnvase: formState.contenidoEnvase || null,
+      viaAdministracion: formState.viaAdministracion || null,
+      poblacionDiana: formState.poblacionDiana || null,
+      // Convertir tags a string separado por comas
+      tagsIndicaciones: formState.tags && formState.tags.length > 0 
+        ? formState.tags.map(tag => tag.nombre).join(',')
+        : null,
+
+      // === TAB 3: REGULATORIOS ===
       paisFabricacion: formState.paisFabricacion || 'EC',
       requierePrescripcionMedica: Boolean(formState.requierePrescripcionMedica),
       esPsicotropico: Boolean(formState.esPsicotropico),
       requiereCadenaDeFrio: Boolean(formState.requiereCadenaDeFrio),
 
-      // Campos de vademécum solo si tienen contenido
-      ...(formState.patologia && { patologia: formState.patologia }),
-      ...(formState.posologia && { posologia: formState.posologia }),
-      ...(formState.contraindicaciones && { contraindicaciones: formState.contraindicaciones }),
-      ...(formState.sustitutoSugerido && { sustitutoSugerido: formState.sustitutoSugerido }),
+      // === TAB 4: VADEMÉCUM ===
+      principioActivo: formState.principioActivo || null,
+      patologia: formState.patologia || null,
+      posologia: formState.posologia || null,
+      contraindicaciones: formState.contraindicaciones || null,
+      sustitutoSugerido: formState.sustitutoSugerido || null,
 
-      // Nivel de completación y metadatos del sistema
-      nivelCompletacion: 0, // Se calculará y actualizará después
-      usuarioUltimaModificacion: 'admin' // Se actualizará después con el usuario real
+      // === METADATOS AUTOMÁTICOS ===
+      fechaUltimaModificacion: new Date().toISOString(),
+      usuarioUltimaModificacion: 'admin' // TODO: Obtener del contexto de usuario
     }
 
-    // Debug específico para campos de atributos
-    console.log('🔧 Debug campos de atributos (FormState → Payload):')
-    console.log('- formaFarmaceuticaId:', formState.formaFarmaceuticaId, '→ formaFarmaceutica:', getNombreById(formaFarmaceuticaOptions, formState.formaFarmaceuticaId))
-    console.log('- viaAdministracionId:', formState.viaAdministracionId, '→ viaAdministracion:', getNombreById(viaAdministracionOptions, formState.viaAdministracionId))
-    console.log('- poblacionDianaId:', formState.poblacionDianaId, '→ poblacionDiana:', getNombreById(poblacionDianaOptions, formState.poblacionDianaId))
-    console.log('- concentracionDosis:', formState.concentracionDosis)
-    console.log('- contenidoEnvase:', formState.contenidoEnvase)  
-    console.log('- tags:', formState.tags)
-
-    // Debug específico para campos de categorización
-    console.log('🏷️ Debug campos de categorización (Usar IDs existentes → Nombres):')
-    console.log('- categoryId:', categorization.categoryId, '→ categoriaPrincipal:', getNombreById(categoriaOptions, categorization.categoryId) || 'null')
-    console.log('- subcategoryId:', categorization.subcategoryId, '→ subcategoria1:', getNombreById(subcategoriaOptions, categorization.subcategoryId) || 'null')
-    console.log('- specific1Id:', categorization.specific1Id, '→ subcategoria2:', getNombreById(specific1Options, categorization.specific1Id) || 'null')
-    console.log('- specific2Id:', categorization.specific2Id, '→ subcategoria3:', getNombreById(specific2Options, categorization.specific2Id) || 'null')
-
-    // Debug específico para tags
-    console.log('🏷️ Debug tags (Array → String):')
-    console.log('- formState.tags (array):', formState.tags)
-    console.log('- tagsIndicaciones (string):', formState.tags && formState.tags.length > 0 ? formState.tags.map(tag => tag.nombre).join(', ') : null)
-
-    console.log('📦 Payload completo mejorado preparado:', payload)
-    
-    // Debug específico del payload de atributos
-    console.log('🎯 Debug payload atributos enviados (como texto):')
-    console.log('- formaFarmaceutica en payload:', payload.formaFarmaceutica)
-    console.log('- viaAdministracion en payload:', payload.viaAdministracion)
-    console.log('- poblacionDiana en payload:', payload.poblacionDiana)
-    console.log('- concentracionDosis en payload:', payload.concentracionDosis)
-    console.log('- contenidoEnvase en payload:', payload.contenidoEnvase)
-    
-    // Debug específico del payload de categorización
-    console.log('🏷️ Debug payload categorización enviados (como texto):')
-    console.log('- categoriaPrincipal en payload:', payload.categoriaPrincipal)
-    console.log('- subcategoria1 en payload:', payload.subcategoria1) 
-    console.log('- subcategoria2 en payload:', payload.subcategoria2)
-    console.log('- subcategoria3 en payload:', payload.subcategoria3)
-    
+    console.log('📦 Payload preparado:', payload)
     return payload
   }
 
-  // Función para actualizar imágenes del producto
+  // Función para validar los datos antes de enviar
+  const validateFormData = (payload: any) => {
+    const errors: string[] = []
+
+    // === VALIDACIONES CRÍTICAS ===
+    if (!payload.codigoInterno) {
+      errors.push('Código interno es obligatorio')
+    }
+
+    if (!payload.nombre) { // Cambiado de nombreProducto a nombre
+      errors.push('Nombre del producto es obligatorio')
+    }
+
+    // === VALIDACIONES DE CATEGORIZACIÓN ===
+    if (!payload.categoryId) {
+      errors.push('Debe seleccionar al menos una categoría principal')
+    }
+
+    // === VALIDACIONES DE FORMATO ===
+    if (payload.concentracion) { // Cambiado de concentracionDosis a concentracion
+      // Validar formato básico de concentración - permitir más flexibilidad
+      const concentracionRegex = /^[\d\s.,]+[a-zA-Z%\/\s]*$/
+      if (!concentracionRegex.test(payload.concentracion.trim())) {
+        errors.push('Formato de concentración/dosis inválido (ej: 500mg, 30 G, 10ml)')
+      }
+    }
+
+    if (payload.contenidoEnvase) {
+      // Validar que contenga al menos un número
+      const contieneNumero = /\d/.test(payload.contenidoEnvase)
+      if (!contieneNumero) {
+        errors.push('Contenido del envase debe contener un valor numérico')
+      }
+    }
+
+    // === VALIDACIONES DE VADEMÉCUM ===
+    if (payload.principioActivo && payload.principioActivo.length < 3) {
+      errors.push('Principio activo debe tener al menos 3 caracteres')
+    }
+
+    // === VALIDACIÓN DE TAGS ===
+    if (payload.tagIds && payload.tagIds.length > 10) { // Cambiado a tagIds
+      errors.push('No se pueden agregar más de 10 tags')
+    }
+
+    console.log('🚨 Errores de validación:', errors)
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+
+  // Función para mostrar vista previa de datos (debugging)
+  const handlePreviewData = async () => {
+    const payload = await preparePayloadForSaveImproved()
+    const validation = validateFormData(payload)
+    
+    console.group('🔍 VISTA PREVIA COMPLETA DE DATOS')
+    console.group('📦 PAYLOAD DEL PRODUCTO')
+    console.log('🆔 Identificación:', {
+      codigoInterno: payload.codigoInterno,
+      upc: payload.upc,
+      nombre: payload.nombre, // Mapeo correcto para backend
+      laboratorio: payload.laboratorio
+    })
+    console.log('🏷️ Categorización:', {
+      categoryId: payload.categoryId,
+      subcategoryId: payload.subcategoryId,
+      specific1Id: payload.specific1Id,
+      specific2Id: payload.specific2Id,
+      categoriaPrincipal: payload.categoriaPrincipal,
+      subcategoria1: payload.subcategoria1,
+      subcategoria2: payload.subcategoria2,
+      subcategoria3: payload.subcategoria3
+    })
+    console.log('💊 Atributos de Filtro:', {
+      principioActivo: payload.principioActivo,
+      concentracion: payload.concentracion, // Mapeo correcto para backend
+      formaFarmaceuticaId: payload.formaFarmaceuticaId,
+      contenidoEnvase: payload.contenidoEnvase,
+      viaAdministracionId: payload.viaAdministracionId,
+      poblacionDianaId: payload.poblacionDianaId,
+      tagIds: payload.tagIds // Array de IDs para backend
+    })
+    console.log('🏛️ Regulatorios:', {
+      paisFabricacion: payload.paisFabricacion,
+      requierePrescripcionMedica: payload.requierePrescripcionMedica,
+      esPsicotropico: payload.esPsicotropico,
+      requiereCadenaDeFrio: payload.requiereCadenaDeFrio
+    })
+    console.log('� Vademécum:', {
+      principioActivo: payload.principioActivo,
+      patologia: payload.patologia,
+      posologia: payload.posologia,
+      contraindicaciones: payload.contraindicaciones,
+      sustitutoSugerido: payload.sustitutoSugerido
+    })
+    console.groupEnd()
+    
+    console.group('🖼️ IMÁGENES')
+    console.log('Total de imágenes:', images.length)
+    images.forEach((img, index) => {
+      console.log(`Imagen ${index + 1}:`, {
+        rutaImagen: img.rutaImagen,
+        orden: index + 1,
+        altText: img.altText
+      })
+    })
+    console.groupEnd()
+    
+    console.group('✅ VALIDACIÓN')
+    console.log('Estado:', validation.isValid ? '✅ VÁLIDO' : '❌ CON ERRORES')
+    if (!validation.isValid) {
+      console.log('Errores encontrados:', validation.errors)
+    }
+    console.groupEnd()
+    
+    console.groupEnd()
+    
+    // Crear resumen para el toast
+    const resumen = `
+📊 RESUMEN DE DATOS:
+• Categorización: ${payload.categoryId ? '✅ Completa' : '❌ Pendiente'}
+• Atributos: ${payload.formaFarmaceuticaId || payload.concentracion || payload.contenidoEnvase ? '✅ Algunos' : '⚠️ Vacíos'}
+• Vademécum: ${payload.principioActivo ? '✅ Con PA' : '⚠️ Sin PA'}
+• Imágenes: ${images.length > 0 ? `✅ ${images.length} img(s)` : '⚠️ Sin imágenes'}
+• Estado: ${validation.isValid ? '✅ Listo para guardar' : '❌ Requiere corrección'}
+    `
+    
+    toast({
+      title: "🔍 Vista Previa Completa",
+      description: `Ver consola para detalles completos.${resumen}`
+    })
+  }
   const updateProductImages = async () => {
     try {
-      console.log('📤 Actualizando imágenes del producto...')
-      console.log('🖼️ Imágenes a procesar:', images)
-      
-      // Usar solo el formato v3 que funciona
-      const imagePayloadv3 = {
-        productId: parseInt(producto.codigoInterno),
-        images: images.map((img, index) => {
-          const fileName = img.rutaImagen.includes('/') 
-            ? img.rutaImagen.split('/').pop() 
-            : img.rutaImagen
-          
-          const fullPath = `/media/products/${fileName}`
-          
-          return {
-            rutaImagen: fullPath,
-            orden: index + 1,
-            altText: img.altText || `Imagen ${index + 1} del producto`
-          }
-        })
+      // Preparar payload de imágenes
+      const imagePayload = {
+        images: images.map((img, index) => ({
+          rutaImagen: img.rutaImagen,
+          orden: index + 1,
+          altText: img.altText || `Imagen ${index + 1} del producto ${formState.codigoInterno}`
+        }))
       }
 
-      console.log('📦 Payload v3 (único):', JSON.stringify(imagePayloadv3, null, 2))
+      console.log('🖼️ Payload de imágenes:', imagePayload)
 
-      const response = await fetch(`${SERVER_URL}:8890/api/product-images/products/${producto.codigoInterno}/images/bulk-update`, {
-        method: 'POST',
+      // TEMPORAL: Mock del endpoint hasta que esté implementado en backend
+      const USAR_MOCK_IMAGES = false // ✅ Cambiar a false - backend está listo!
+      
+      if (USAR_MOCK_IMAGES) {
+        console.log('🔄 Mock imágenes: Backend no implementado aún')
+        console.log('🖼️ Payload de imágenes que se enviaría:', JSON.stringify(imagePayload, null, 2))
+        
+        // Simular delay del servidor
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        console.log('✅ Mock: Imágenes actualizadas exitosamente')
+      } else {
+        // Código real para cuando el backend esté listo
+        const response = await fetch(`${SERVER_URL}:8890/api/product-images/products/${formState.codigoInterno}/images/bulk-update`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(imagePayload)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.text()
+          console.warn('⚠️ Error actualizando imágenes:', errorData)
+          // No fallar completamente si las imágenes fallan, solo avisar
+          toast({
+            title: "⚠️ Advertencia",
+            description: "El producto se guardó pero hubo problemas actualizando las imágenes."
+          })
+        } else {
+          console.log('✅ Imágenes actualizadas correctamente en servidor real')
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Error en updateProductImages:', error)
+      // No lanzar el error para no interrumpir el flujo principal
+    }
+  }
+
+  // Función para probar guardado con payload simplificado
+  const handleSaveSimplified = async () => {
+    try {
+      setIsSaving(true)
+      
+      // Usar payload simplificado
+      const payload = prepareSimplifiedPayload()
+      
+      console.log('📤 Probando con payload simplificado...')
+      console.log('📤 Enviando payload simplificado al servidor:', JSON.stringify(payload, null, 2))
+      
+      const response = await fetch(`${SERVER_URL}:8890/api/products/${producto.codigoInterno}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(imagePayloadv3)
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
         const errorData = await response.text()
-        console.error('❌ Error actualizando imágenes:', errorData)
-        console.error('❌ Payload enviado:', JSON.stringify(imagePayloadv3, null, 2))
-        return false
+        console.error('❌ Error del servidor (payload simplificado):', errorData)
+        throw new Error(`Error ${response.status}: ${errorData}`)
       }
       
-      const responseData = await response.text()
-      console.log('✅ Imágenes actualizadas correctamente')
-      console.log('📝 Respuesta:', responseData)
-      return true
+      console.log('✅ Producto actualizado con payload simplificado')
+      
+      toast({
+        title: "✅ Producto actualizado (Simplificado)",
+        description: "Los cambios básicos se han guardado exitosamente.",
+      })
+      
+      setIsFormDirty(false)
+      
     } catch (error) {
-      console.error('❌ Error en updateProductImages:', error)
-      return false
+      console.error('❌ Error guardando con payload simplificado:', error)
+      toast({
+        variant: "destructive",
+        title: "Error al guardar (Simplificado)",
+        description: error instanceof Error ? error.message : "Error desconocido",
+      })
+    } finally {
+      setIsSaving(false)
     }
   }
-
-  // Función para guardar cambios
   const handleSave = async () => {
     try {
       setIsSaving(true)
 
       // 1. Preparar payload completo mejorado
       const payload = await prepareCompletePayload()
-      
-      // 1.1 Calcular nivel de completación
-      const completionLevel = calculateCompletionLevel()
-      payload.nivelCompletacion = completionLevel
-      
-      // 1.2 Obtener usuario actual
-      const userData = JSON.parse(sessionStorage.getItem('userData') || '{}')
-      payload.usuarioUltimaModificacion = userData.usuario || 'admin'
-      
-      console.log('📊 Nivel de completación calculado:', completionLevel + '%')
-      console.log('👤 Usuario modificación:', payload.usuarioUltimaModificacion)
 
       // 2. Validar datos básicos
       if (!payload.codigoInterno || !payload.nombre) {
@@ -816,6 +836,7 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
       // 3. Enviar datos del producto
       console.log('📤 Enviando datos del producto completo...')
       console.log('📤 Payload completo:', JSON.stringify(payload, null, 2))
+      console.log('🌐 URL del endpoint:', `${SERVER_URL}:8890/api/products/${producto.codigoInterno}`)
       
       const response = await fetch(`${SERVER_URL}:8890/api/products/${producto.codigoInterno}`, {
         method: 'PUT',
@@ -825,61 +846,67 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
         body: JSON.stringify(payload)
       })
 
+      console.log('� Respuesta del servidor - Status:', response.status)
+
       if (!response.ok) {
         const errorData = await response.text()
         console.error('❌ Error del servidor:', errorData)
+        console.error('❌ Payload enviado:', JSON.stringify(payload, null, 2))
         throw new Error(`Error ${response.status}: ${errorData}`)
       }
       
-      // Log de la respuesta del backend para debugging
-      const backendResponse = await response.json()
-      console.log('✅ Producto actualizado en servidor')
-      console.log('📋 Respuesta completa del backend:', backendResponse)
-      
-      // Verificar específicamente los campos de atributos en la respuesta
-      console.log('🔍 Verificación campos atributos en respuesta:')
-      console.log('- formaFarmaceutica (texto):', backendResponse.formaFarmaceutica)
-      console.log('- viaAdministracion (texto):', backendResponse.viaAdministracion)
-      console.log('- poblacionDiana (texto):', backendResponse.poblacionDiana)
-      console.log('- concentracionDosis:', backendResponse.concentracionDosis)
-      console.log('- contenidoEnvase:', backendResponse.contenidoEnvase)
-      
-      // Verificar específicamente los campos de categorización en la respuesta
-      console.log('🏷️ Verificación campos categorización en respuesta:')
-      console.log('- categoriaPrincipal (texto):', backendResponse.categoriaPrincipal)
-      console.log('- subcategoria1 (texto):', backendResponse.subcategoria1)
-      console.log('- subcategoria2 (texto):', backendResponse.subcategoria2)
-      console.log('- subcategoria3 (texto):', backendResponse.subcategoria3)
-      console.log('- categoryId (ID):', backendResponse.categoryId)
-      console.log('- subcategoryId (ID):', backendResponse.subcategoryId)
-      console.log('- specific1Id (ID):', backendResponse.specific1Id)
-      console.log('- specific2Id (ID):', backendResponse.specific2Id)
-
-      // Verificar específicamente los tags en la respuesta
-      console.log('🏷️ Verificación tags en respuesta:')
-      console.log('- tagsIndicaciones (texto):', backendResponse.tagsIndicaciones)
+      const responseData = await response.text()
+      console.log('✅ Producto actualizado en servidor real')
+      console.log('📝 Respuesta completa:', responseData)
 
       // 4. Actualizar imágenes si hay cambios
-      const HABILITAR_IMAGENES = true // Volver a habilitar para pruebas
-      
-      if (HABILITAR_IMAGENES && images.length > 0) {
+      if (images.length > 0) {
         console.log('📤 Actualizando imágenes...')
-        const imageSuccess = await updateProductImages()
-        if (!imageSuccess) {
-          toast({
-            title: "⚠️ Producto actualizado con advertencias",
-            description: "El producto se guardó pero hubo problemas actualizando las imágenes.",
-          })
-          // No hacer return, continuar con el éxito del producto
-        }
-      } else if (images.length > 0) {
-        console.log('⚠️ Imágenes detectadas pero endpoint deshabilitado temporalmente')
+        await updateProductImages()
       }
 
       // 5. Éxito
       toast({
         title: "✅ Producto actualizado",
-        description: `Todos los cambios se han guardado exitosamente. Completación: ${completionLevel}%`,
+        description: "Todos los cambios se han guardado exitosamente.",
+      })
+      setIsFormDirty(false)
+      onOpenChange(false)
+
+    } catch (error) {
+      console.error('❌ Error guardando cambios:', error)
+      toast({
+        variant: "destructive",
+        title: "Error al guardar",
+        description: error instanceof Error ? error.message : "No se pudieron guardar los cambios. Por favor, intente nuevamente.",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+        if (!response.ok) {
+          const errorData = await response.text()
+          console.error('❌ Error del servidor:', errorData)
+          console.error('❌ Payload enviado:', JSON.stringify(payload, null, 2))
+          throw new Error(`Error ${response.status}: ${errorData}`)
+        }
+        
+        const responseData = await response.text()
+        console.log('✅ Producto actualizado en servidor real')
+        console.log('📝 Respuesta completa:', responseData)
+      }
+
+      // 4. Actualizar imágenes si hay cambios
+      if (images.length > 0) {
+        console.log('📤 Actualizando imágenes...')
+        await updateProductImages()
+      }
+
+      // 5. Éxito
+      toast({
+        title: "✅ Producto actualizado",
+        description: "Todos los cambios se han guardado exitosamente.",
       })
       setIsFormDirty(false)
       onOpenChange(false)
@@ -934,6 +961,9 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
     setIsFormDirty(true)
   }
 
+  // URL base del servidor
+  const SERVER_URL = 'http://10.10.10.251';
+
   // Cargar imágenes cuando el componente se monte o el código interno cambie
   useEffect(() => {
     const loadImages = async () => {
@@ -954,8 +984,8 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
 
         // Las imágenes ya vienen con la ruta relativa correcta (/media/products/...)
         const transformedImages = data.map((img: ProductImage) => {
-          // Construir la URL completa agregando el servidor de media con puerto 80
-          const imageUrl = `http://10.10.10.251:80${img.rutaImagen}`;
+          // Construir la URL completa agregando solo el servidor base
+          const imageUrl = `${SERVER_URL}${img.rutaImagen}`;
           console.log('URL completa de la imagen:', imageUrl);
           
           return {
@@ -987,17 +1017,26 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
           </DialogTitle>
         </DialogHeader>
         <div className="absolute right-4 top-4 flex items-center gap-2">
-          {!optionsLoaded && (
-            <div className="flex items-center gap-1 text-xs text-gray-500">
-              <div className="h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent"></div>
-              Cargando opciones...
-            </div>
-          )}
+          <Button
+            variant="outline"
+            onClick={handlePreviewData}
+            className="border-blue-200 text-blue-600 hover:bg-blue-50"
+          >
+            🔍 Vista Previa
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSaveSimplified}
+            className="border-orange-200 text-orange-600 hover:bg-orange-50"
+            disabled={!isFormDirty || isSaving}
+          >
+            🧪 Probar Simple
+          </Button>
           <Button
             variant="default"
             className="bg-green-600 hover:bg-green-700 text-white"
             onClick={handleSave}
-            disabled={!isFormDirty || isSaving || !optionsLoaded}
+            disabled={!isFormDirty || isSaving}
           >
             {isSaving ? (
               <>
@@ -1011,18 +1050,11 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
         </div>
         
         <div className="flex flex-col gap-4">
-          {/* Indicador de nivel de completación dinámico */}
           <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-muted-foreground font-medium">Completación del producto</span>
-                <span className="font-semibold text-primary">{currentCompletionLevel}%</span>
-              </div>
-              <Progress 
-                value={currentCompletionLevel} 
-                className="h-3" 
-              />
-            </div>
+            <Progress value={producto.nivelCompletacion} className="w-[60%]" />
+            <span className="text-sm text-muted-foreground">
+              Nivel de completación: {producto.nivelCompletacion}%
+            </span>
           </div>
 
           <Tabs defaultValue="identificacion" className="w-full">
@@ -1200,12 +1232,8 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
                       <Label htmlFor="tagsIndicaciones">Tags e Indicaciones</Label>
                       <TagSelect
                         key={`tags-${producto.codigoInterno}`}
-                        value={(() => {
-                          console.log('🏷️ Renderizando TagSelect con valor:', formState.tags)
-                          return formState.tags || []
-                        })()}
+                        value={formState.tags || []}
                         onChange={(tags) => {
-                          console.log('🏷️ TagSelect onChange llamado con:', tags)
                           handleFormChange('tags', tags)
                           setIsFormDirty(true)
                         }}

@@ -39,6 +39,11 @@ interface Producto {
   subcategoryId: number | null;
   specific1Id: number | null;
   specific2Id: number | null;
+  // Campos adicionales requeridos por ProductFormState
+  formaFarmaceuticaId: number | null;
+  viaAdministracionId: number | null;
+  poblacionDianaId: number | null;
+  tags: { id: number; nombre: string; }[];
 }
 
 // Definir la interfaz para la respuesta paginada

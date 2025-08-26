@@ -3,245 +3,345 @@ import { useDropzone } from 'react-dropzone'
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
 import { Loader2, Upload, Trash2, GripHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
-import { SERVER_URL } from '@/config'
 
-interface ImageState {
+// URL directa para evitar problemas de CORS
+const SERVER_URL = 'http://10.10.10.251'
+
+interface ImageItem {
   key: string
   preview: string
   finalUrl?: string
-  status: 'uploading' | 'completed' | 'error'
+  status: 'uploading' | 'completed'
   orden: number
-  error?: string
-}
-
-interface ProductImage {
-  id: number
-  codigoInternoProducto: string
-  rutaImagen: string
-  orden: number
-  altText: string | null
 }
 
 interface ImageGalleryProps {
-  images: ProductImage[]
-  productId: string
-  onChange: (images: ProductImage[]) => void
-  className?: string
+  productId?: number
+  images: Array<{
+    id: number
+    rutaImagen: string
+    orden: number
+  }>
+  onImagesUpdate?: (images: any[]) => void
 }
 
-export function ImageGallery({ images, productId, onChange, className }: ImageGalleryProps) {
-  // Inicializamos el estado una sola vez cuando cambian las props
-  const [localImages, setLocalImages] = useState<ImageState[]>(() => 
-    images.map(img => ({
-      key: img.id.toString(),
-      preview: img.rutaImagen,
-      finalUrl: img.rutaImagen,
-      status: 'completed' as const,
-      orden: img.orden
-    }))
-  )
-
-  // Solo sincronizamos cuando cambia el producto
-  useEffect(() => {
-    setLocalImages(
-      images.map(img => ({
+function ImageGallery({ productId, images, onImagesUpdate }: ImageGalleryProps) {
+  const [localImages, setLocalImages] = useState<ImageItem[]>(
+    images
+      .filter(img => img && img.id) // Filtrar imágenes válidas
+      .map(img => ({
         key: img.id.toString(),
         preview: img.rutaImagen,
         finalUrl: img.rutaImagen,
         status: 'completed' as const,
-        orden: img.orden
+        orden: img.orden || 0
       }))
-    )
-  }, [productId]) // Solo dependemos del productId, no de images
+  )
 
-  // Notificamos cambios al padre de forma debounced
+  // Solo sincronizamos cuando cambia el producto y las imágenes son diferentes
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      const completedImages = localImages
-        .filter(img => img.status === 'completed' && img.finalUrl)
-        .map(img => ({
-          id: isNaN(parseInt(img.key)) ? 0 : parseInt(img.key),
-          codigoInternoProducto: productId,
-          rutaImagen: img.finalUrl!,
-          orden: img.orden,
-          altText: null
-        }))
-      onChange(completedImages)
-    }, 300) // Esperamos 300ms antes de notificar cambios
-
-    return () => clearTimeout(timeoutId)
-  }, [localImages, productId, onChange])
-
-  const uploadImage = useCallback(async (file: File, tempKey: string) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('codigoInterno', productId)
-
-    try {
-      const response = await fetch(`${SERVER_URL}/api/images/upload`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) throw new Error('Error al subir la imagen')
-
-      const data = await response.json()
-      
-      setLocalImages(prev => prev.map(img => 
-        img.key === tempKey 
-          ? { ...img, status: 'completed', finalUrl: data.url }
-          : img
-      ))
-
-      // Limpiamos la URL del preview después de actualizar el estado
-      window.URL.revokeObjectURL(
-        localImages.find(img => img.key === tempKey)?.preview || ''
-      )
-      
-      toast.success('Imagen subida exitosamente')
-    } catch (error) {
-      setLocalImages(prev => prev.map(img => 
-        img.key === tempKey 
-          ? { ...img, status: 'error', error: 'Error al subir la imagen' }
-          : img
-      ))
-      toast.error('Error al subir la imagen')
+    console.log('🔄 useEffect - productId:', productId, 'images count:', images.length)
+    console.log('🔍 Images recibidas:', images)
+    
+    const newImages = images
+      .filter(img => img && img.id) // Filtrar imágenes válidas
+      .map(img => ({
+        key: img.id.toString(),
+        preview: img.rutaImagen,
+        finalUrl: img.rutaImagen,
+        status: 'completed' as const,
+        orden: img.orden || 0
+      }))
+    
+    // Verificamos si hay diferencias antes de actualizar
+    const currentKeys = localImages.map(img => img.key).sort()
+    const newKeys = newImages.map(img => img.key).sort()
+    
+    if (JSON.stringify(currentKeys) !== JSON.stringify(newKeys)) {
+      console.log('📝 Actualizando localImages - diferencias detectadas')
+      setLocalImages(newImages)
+    } else {
+      console.log('✅ No hay cambios en las imágenes - manteniendo estado actual')
     }
   }, [productId])
 
-  const handleDelete = useCallback((key: string) => {
-    setLocalImages(prev => 
-      prev
-        .filter(img => img.key !== key)
-        .map((img, index) => ({ ...img, orden: index + 1 }))
-    )
-  }, []) // Sin dependencias
+  const uploadImage = async (file: File) => {
+    console.log('🔄 Iniciando carga de imagen:', file.name)
+    
+    const tempKey = `${Date.now()}_${file.name}`
+    const objectUrl = window.URL.createObjectURL(file)
+    
+    const tempImage = {
+      key: tempKey,
+      preview: objectUrl,
+      status: 'uploading' as const,
+      orden: localImages.length + 1
+    }
+    
+    console.log('📝 Añadiendo imagen temporal al estado:', tempImage.key)
+    setLocalImages(prev => [...prev, tempImage])
 
-  const onDragEnd = useCallback((result: any) => {
-    if (!result.destination) return
+    try {
+      const formData = new FormData()
+      formData.append('file', file)  // Cambiado de 'image' a 'file'
+      formData.append('codigoInterno', productId?.toString() || '')  // Cambiado de 'productId' a 'codigoInterno'
 
-    setLocalImages(prev => {
-      const items = Array.from(prev)
-      const [reorderedItem] = items.splice(result.source.index, 1)
-      items.splice(result.destination.index, 0, reorderedItem)
-      return items.map((item, index) => ({ ...item, orden: index + 1 }))
-    })
-  }, []) // Sin dependencias
+      console.log('🌐 Enviando a:', `/api/images/upload`)
+      console.log('📦 codigoInterno:', productId?.toString())
+      console.log('📦 File name:', file.name, 'size:', file.size)
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setLocalImages(prev => {
-      const newImages = acceptedFiles.map((file, index) => {
-        const tempKey = Date.now().toString() + index
-        const preview = URL.createObjectURL(file)
-
-        // Iniciar la carga inmediatamente
-        uploadImage(file, tempKey)
-
-        return {
-          key: tempKey,
-          preview,
-          status: 'uploading' as const,
-          orden: prev.length + index + 1
-        }
+      // Endpoint correcto según el curl
+      const response = await fetch(`/api/images/upload`, {
+        method: 'POST',
+        body: formData
       })
 
-      return [...prev, ...newImages]
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ Error del servidor:', response.status, errorText)
+        throw new Error(`Error del servidor: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log('✅ Imagen subida exitosamente:', data)
+      
+      // Construir la URL de la imagen usando el proxy de Vite para evitar CORS
+      const fullImageUrl = data.url.startsWith('http') 
+        ? data.url 
+        : `/api${data.url}` // Usar el proxy de Vite
+      
+      console.log('🖼️ URL de imagen (via proxy):', fullImageUrl)
+      
+      // Solo mostramos el toast de éxito después de confirmar que se subió
+      toast.success('Imagen subida correctamente')
+      
+      // Actualizamos el estado local usando callback para obtener el estado actual
+      setLocalImages(prevImages => {
+        console.log('🔍 prevImages antes de actualizar:', prevImages)
+        console.log('🔍 Buscando tempKey:', tempKey)
+        
+        const updatedImages = prevImages.map(img => 
+          img.key === tempKey 
+            ? { ...img, status: 'completed' as const, finalUrl: fullImageUrl }
+            : img
+        )
+        
+        console.log('🔍 updatedImages después de map:', updatedImages)
+        
+        // Limpiamos la URL del preview
+        const imageToClean = prevImages.find(img => img.key === tempKey)
+        if (imageToClean?.preview && imageToClean.preview.startsWith('blob:')) {
+          window.URL.revokeObjectURL(imageToClean.preview)
+        }
+        
+        // Notificamos al padre con el estado actualizado
+        if (onImagesUpdate) {
+          setTimeout(() => {
+            // Convertimos al formato que espera ProductoDetalle.tsx
+            const formattedImages = updatedImages.map(img => {
+              // Para imágenes nuevas (key con timestamp), generar un ID único
+              const imageId = img.key.includes('_') ? 
+                Math.floor(Math.random() * 1000000) + 900000 : // ID temporal para nuevas imágenes
+                parseInt(img.key) || Date.now()
+                
+              return {
+                id: imageId,
+                codigoInternoProducto: productId?.toString() || '',
+                rutaImagen: img.finalUrl || img.preview,
+                orden: img.orden,
+                altText: null
+              }
+            })
+            console.log('📤 Enviando al padre:', formattedImages)
+            onImagesUpdate(formattedImages)
+          }, 0)
+        }
+        
+        return updatedImages
+      })
+
+    } catch (error) {
+      console.error('❌ Error al subir imagen:', error)
+      
+      // Removemos la imagen fallida del estado
+      setLocalImages(prev => prev.filter(img => img.key !== tempKey))
+      window.URL.revokeObjectURL(objectUrl)
+      
+      toast.error('Error al subir la imagen')
+    }
+  }
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    acceptedFiles.forEach(file => {
+      uploadImage(file)
     })
-  }, [uploadImage])
+  }, [productId])
+
+  const deleteImage = async (imageKey: string) => {
+    const image = localImages.find(img => img.key === imageKey)
+    if (!image) return
+
+    try {
+      if (image.finalUrl && !image.finalUrl.startsWith('blob:')) {
+        await fetch(`/api/images/delete`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: image.finalUrl })
+        })
+      }
+
+      setLocalImages(prev => prev.filter(img => img.key !== imageKey))
+      
+      if (image.preview && image.preview.startsWith('blob:')) {
+        window.URL.revokeObjectURL(image.preview)
+      }
+      
+      const updatedImages = localImages.filter(img => img.key !== imageKey)
+      
+      // Convertir al formato correcto antes de enviar al padre
+      const formattedImages = updatedImages.map(img => {
+        const imageId = img.key.includes('_') ? 
+          Math.floor(Math.random() * 1000000) + 900000 : 
+          parseInt(img.key) || Date.now()
+          
+        return {
+          id: imageId,
+          codigoInternoProducto: productId?.toString() || '',
+          rutaImagen: img.finalUrl || img.preview,
+          orden: img.orden,
+          altText: null
+        }
+      })
+      
+      onImagesUpdate?.(formattedImages)
+      
+      toast.success('Imagen eliminada')
+    } catch (error) {
+      console.error('Error al eliminar imagen:', error)
+      toast.error('Error al eliminar la imagen')
+    }
+  }
+
+  const onDragEnd = (result: any) => {
+    if (!result.destination) return
+
+    const items = Array.from(localImages)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+
+    const reorderedItems = items.map((item, index) => ({
+      ...item,
+      orden: index + 1
+    }))
+
+    setLocalImages(reorderedItems)
+    
+    // Convertir al formato correcto antes de enviar al padre
+    const formattedImages = reorderedItems.map(img => {
+      const imageId = img.key.includes('_') ? 
+        Math.floor(Math.random() * 1000000) + 900000 : 
+        parseInt(img.key) || Date.now()
+        
+      return {
+        id: imageId,
+        codigoInternoProducto: productId?.toString() || '',
+        rutaImagen: img.finalUrl || img.preview,
+        orden: img.orden,
+        altText: null
+      }
+    })
+    
+    onImagesUpdate?.(formattedImages)
+  }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/webp': ['.webp'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpg', '.jpeg']
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp']
     },
     multiple: true
   })
 
   return (
-    <div className={className}>
-      <div className="flex flex-wrap gap-4">
-        {/* Botón de carga separado */}
+    <div className="space-y-4">
+      {/* Upload Zone - Diseño compacto original */}
+      <div className="mb-4">
         <div
           {...getRootProps()}
-          className={`
-            w-[200px] aspect-square rounded-lg border-2 border-dashed
-            flex items-center justify-center cursor-pointer
-            hover:border-primary hover:bg-primary/5
-            transition-colors
-            ${isDragActive ? 'border-primary bg-primary/10' : 'border-border'}
-          `}
+          className={`inline-flex items-center gap-2 px-3 py-2 border-2 border-dashed cursor-pointer transition-colors rounded-md text-sm ${
+            isDragActive
+              ? 'border-blue-400 bg-blue-50 text-blue-600'
+              : 'border-gray-300 hover:border-gray-400 text-gray-600'
+          }`}
         >
           <input {...getInputProps()} />
-          <div className="flex flex-col items-center gap-2 text-muted-foreground">
-            <Upload className="w-8 h-8" />
-            <span className="text-xs text-center">
-              Arrastra o selecciona imágenes
-              <br />
-              (WEBP, PNG, JPG)
-            </span>
-          </div>
+          <Upload className="h-4 w-4" />
+          <span>{isDragActive ? 'Suelta aquí' : 'Subir imágenes'}</span>
         </div>
+        <p className="text-xs text-gray-500 mt-1 ml-1">Formatos: JPG, PNG, WebP</p>
+      </div>
 
-        {/* Área de imágenes arrastrables */}
+      {/* Image Gallery */}
+      {localImages.length > 0 && (
         <DragDropContext onDragEnd={onDragEnd}>
           <Droppable droppableId="image-gallery" direction="horizontal">
             {(provided) => (
-              <div 
-                ref={provided.innerRef} 
-                {...provided.droppableProps} 
-                className="flex flex-wrap gap-4"
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="grid grid-cols-2 md:grid-cols-4 gap-4"
               >
                 {localImages.map((image, index) => (
-                  <Draggable 
-                    key={image.key} 
-                    draggableId={image.key} 
-                    index={index}
-                    isDragDisabled={image.status === 'uploading'}
-                  >
+                  <Draggable key={image.key} draggableId={image.key} index={index}>
                     {(provided) => (
                       <div
                         ref={provided.innerRef}
                         {...provided.draggableProps}
-                        className="w-[200px] relative aspect-square rounded-lg overflow-hidden group"
+                        className="relative group"
                       >
-                        <img
-                          src={image.finalUrl || image.preview}
-                          alt="Product"
-                          className="w-full h-full object-cover"
-                        />
-                        
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          {image.status === 'uploading' && (
-                            <Loader2 className="w-8 h-8 text-white animate-spin" />
+                        <div className="aspect-square relative bg-gray-100 rounded-lg overflow-hidden">
+                          {image.status === 'uploading' ? (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                            </div>
+                          ) : (
+                            <img
+                              src={image.finalUrl || image.preview}
+                              alt="Producto"
+                              className="w-full h-full object-cover"
+                              onLoad={() => console.log('✅ Imagen cargada correctamente:', image.finalUrl || image.preview)}
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement
+                                console.log('❌ Error cargando imagen:', target.src)
+                                
+                                // Si falla la URL del proxy, intentar con la URL directa
+                                if (target.src.includes('/api/')) {
+                                  const directUrl = target.src.replace('/api', `${SERVER_URL}:8890`)
+                                  console.log('🔄 Intentando URL directa:', directUrl)
+                                  target.src = directUrl
+                                } else {
+                                  console.log('🔄 Usando placeholder')
+                                  target.src = '/placeholder.svg'
+                                }
+                              }}
+                            />
                           )}
                           
-                          {image.status === 'error' && (
-                            <div className="flex flex-col items-center gap-2">
-                              <Trash2 className="w-8 h-8 text-red-500" />
-                              <button
-                                onClick={() => handleDelete(image.key)}
-                                className="text-xs text-white hover:underline"
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          )}
+                          {/* Drag Handle */}
+                          <div
+                            {...provided.dragHandleProps}
+                            className="absolute top-2 left-2 bg-white/80 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                          >
+                            <GripHorizontal className="h-4 w-4" />
+                          </div>
 
-                          {image.status === 'completed' && (
-                            <div className="flex items-center gap-4">
-                              <button
-                                onClick={() => handleDelete(image.key)}
-                                className="text-white hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 className="w-6 h-6" />
-                              </button>
-                              <div {...provided.dragHandleProps}>
-                                <GripHorizontal className="w-6 h-6 text-white cursor-grab" />
-                              </div>
-                            </div>
-                          )}
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => deleteImage(image.key)}
+                            className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -252,7 +352,9 @@ export function ImageGallery({ images, productId, onChange, className }: ImageGa
             )}
           </Droppable>
         </DragDropContext>
-      </div>
+      )}
     </div>
   )
 }
+
+export default ImageGallery
