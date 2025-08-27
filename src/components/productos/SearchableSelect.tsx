@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Select from 'react-select'
 import { toast } from "@/components/ui/use-toast"
+import { buildApiUrl } from "@/config/urls"
 
 interface Option {
   id: number
@@ -26,13 +27,12 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [options, setOptions] = useState<Option[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const SERVER_URL = 'http://10.10.10.251:8890'
 
   useEffect(() => {
     const fetchOptions = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch(`${SERVER_URL}${endpoint}`)
+        const response = await fetch(buildApiUrl(endpoint))
         if (!response.ok) {
           throw new Error('Error al cargar las opciones')
         }

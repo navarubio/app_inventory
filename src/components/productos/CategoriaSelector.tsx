@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { buildApiUrl } from "@/config/urls"
 
 interface Option {
   id: number
@@ -93,7 +94,7 @@ export function CategoriaSelector({
       setLoading(prev => ({ ...prev, categories: true }))
       setError(prev => ({ ...prev, categories: false }))
       try {
-        const response = await fetch('http://10.10.10.251:8890/api/categories/list')
+        const response = await fetch(buildApiUrl('/api/categories/list'))
         if (!response.ok) throw new Error('Error al cargar categorías')
         const data = await response.json()
         setCategories(Array.isArray(data) ? data : [])
@@ -119,7 +120,7 @@ export function CategoriaSelector({
       setLoading(prev => ({ ...prev, subcategories: true }))
       setError(prev => ({ ...prev, subcategories: false }))
       try {
-        const response = await fetch(`http://10.10.10.251:8890/api/subcategories/category/${categoryId}/list`)
+        const response = await fetch(buildApiUrl(`/api/subcategories/category/${categoryId}/list`))
         if (!response.ok) throw new Error('Error al cargar subcategorías')
         const data = await response.json()
         setSubcategories(Array.isArray(data) ? data : [])
@@ -145,7 +146,7 @@ export function CategoriaSelector({
       setLoading(prev => ({ ...prev, specifics1: true }))
       setError(prev => ({ ...prev, specifics1: false }))
       try {
-        const response = await fetch(`http://10.10.10.251:8890/api/specific1/subcategory/${subcategoryId}/list`)
+        const response = await fetch(buildApiUrl(`/api/specific1/subcategory/${subcategoryId}/list`))
         if (!response.ok) throw new Error('Error al cargar específicos')
         const data = await response.json()
         setSpecifics1(Array.isArray(data) ? data : [])
@@ -171,7 +172,7 @@ export function CategoriaSelector({
       setLoading(prev => ({ ...prev, specifics2: true }))
       setError(prev => ({ ...prev, specifics2: false }))
       try {
-        const response = await fetch(`http://10.10.10.251:8890/api/specific2/specific1/${specific1Id}/list`)
+        const response = await fetch(buildApiUrl(`/api/specific2/specific1/${specific1Id}/list`))
         if (!response.ok) throw new Error('Error al cargar sub-específicos')
         const data = await response.json()
         setSpecifics2(Array.isArray(data) ? data : [])

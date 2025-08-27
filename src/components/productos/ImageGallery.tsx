@@ -3,9 +3,7 @@ import { useDropzone } from 'react-dropzone'
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd'
 import { Loader2, Upload, Trash2, GripHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
-
-// URL directa para evitar problemas de CORS
-const SERVER_URL = 'http://10.10.10.251'
+import { CONFIG, buildImageUrl, buildApiUrl } from '@/config/urls'
 
 interface ImageItem {
   key: string
@@ -86,12 +84,12 @@ function ImageGallery({ productId, images, onImagesUpdate }: ImageGalleryProps) 
       formData.append('file', file)  // Cambiado de 'image' a 'file'
       formData.append('codigoInterno', productId?.toString() || '')  // Cambiado de 'productId' a 'codigoInterno'
 
-      console.log('🌐 Enviando a:', `/api/images/upload`)
+      console.log('🌐 Enviando a:', buildApiUrl('/api/images/upload'))
       console.log('📦 codigoInterno:', productId?.toString())
       console.log('📦 File name:', file.name, 'size:', file.size)
 
       // Endpoint correcto según el curl
-      const response = await fetch(`/api/images/upload`, {
+      const response = await fetch(buildApiUrl('/api/images/upload'), {
         method: 'POST',
         body: formData
       })
@@ -105,12 +103,12 @@ function ImageGallery({ productId, images, onImagesUpdate }: ImageGalleryProps) 
       const data = await response.json()
       console.log('✅ Imagen subida exitosamente:', data)
       
-      // Construir la URL de la imagen usando el proxy de Vite para evitar CORS
+      // Construir la URL de la imagen usando la configuración centralizada
       const fullImageUrl = data.url.startsWith('http') 
         ? data.url 
-        : `/api${data.url}` // Usar el proxy de Vite
+        : buildImageUrl(data.url) // Usar la función centralizada
       
-      console.log('🖼️ URL de imagen (via proxy):', fullImageUrl)
+      console.log('🖼️ URL de imagen (configurada):', fullImageUrl)
       
       // Solo mostramos el toast de éxito después de confirmar que se subió
       toast.success('Imagen subida correctamente')
@@ -183,7 +181,7 @@ function ImageGallery({ productId, images, onImagesUpdate }: ImageGalleryProps) 
 
     try {
       if (image.finalUrl && !image.finalUrl.startsWith('blob:')) {
-        await fetch(`/api/images/delete`, {
+        await fetch(buildApiUrl('/api/images/delete'), {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: image.finalUrl })
@@ -314,10 +312,13 @@ function ImageGallery({ productId, images, onImagesUpdate }: ImageGalleryProps) 
                                 const target = e.target as HTMLImageElement
                                 console.log('❌ Error cargando imagen:', target.src)
                                 
-                                // Si falla la URL del proxy, intentar con la URL directa
-                                if (target.src.includes('/api/')) {
-                                  const directUrl = target.src.replace('/api', `${SERVER_URL}:8890`)
-                                  console.log('🔄 Intentando URL directa:', directUrl)
+                                // Si falla la URL, intentar con la función centralizada
+                                if (!target.src.includes('placeholder.svg')) {
+                                  // Extraer la ruta relativa de la imagen desde la URL completa
+                                  const urlObj = new URL(target.src)
+                                  const imagePath = urlObj.pathname
+                                  const directUrl = buildImageUrl(imagePath)
+                                  console.log('🔄 Intentando URL reconstruida:', directUrl)
                                   target.src = directUrl
                                 } else {
                                   console.log('🔄 Usando placeholder')

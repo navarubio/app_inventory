@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import debounce from 'lodash/debounce'
-
-// URL base del servidor (debe coincidir con la configuración del componente principal)
-const SERVER_URL = 'http://10.10.10.251';
+import { buildApiUrl } from "@/config/urls"
 
 interface ProductSuggestion {
   codigoInterno: string
@@ -68,8 +66,8 @@ export function CloneCategorization({
     
     // Si el término está vacío, mostrar todos los productos categorizados
     const url = term 
-      ? `${SERVER_URL}:8890/api/products/categorized?nombre=${encodeURIComponent(term)}&page=0&size=20`
-      : `${SERVER_URL}:8890/api/products/categorized?page=0&size=20`;
+      ? buildApiUrl(`/api/products/categorized?nombre=${encodeURIComponent(term)}&page=0&size=20`)
+      : buildApiUrl('/api/products/categorized?page=0&size=20');
     
     console.log('URL de búsqueda:', url);
     setLoading(true)

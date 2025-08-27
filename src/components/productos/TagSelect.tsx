@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import AsyncCreatableSelect from 'react-select/async-creatable'
 import debounce from 'lodash/debounce'
 import { toast } from "@/components/ui/use-toast"
+import { buildApiUrl } from "@/config/urls"
 
 interface Tag {
   id: number | null
@@ -36,7 +37,6 @@ export function TagSelect({
 }: TagSelectProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [initialTagOptions, setInitialTagOptions] = useState<TagOption[]>([])
-  const SERVER_URL = 'http://10.10.10.251:8890'
 
   // Convertir el valor de entrada a formato de react-select
   const formattedValue = useMemo(() => 
@@ -50,7 +50,7 @@ export function TagSelect({
   useEffect(() => {
     const fetchInitialTags = async () => {
       try {
-        const response = await fetch(`${SERVER_URL}/api/tags/activos?limit=15`)
+        const response = await fetch(buildApiUrl('/api/tags/activos?limit=1000'))
         if (!response.ok) throw new Error('Error al cargar tags iniciales')
         const data = await response.json()
         
@@ -84,7 +84,7 @@ export function TagSelect({
 
     setIsLoading(true)
     try {
-      const response = await fetch(`${SERVER_URL}/api/tags/search?nombre=${encodeURIComponent(inputValue)}`)
+      const response = await fetch(buildApiUrl(`/api/tags/search?nombre=${encodeURIComponent(inputValue)}`))
       if (!response.ok) throw new Error('Error en la búsqueda')
       const data = await response.json()
       

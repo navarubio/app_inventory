@@ -18,6 +18,7 @@ import { CloneCategorization } from "./CloneCategorization"
 import { SearchableSelect } from "./SearchableSelect"
 import { TagSelect } from "./TagSelect"
 import { SuggestionInput } from "./SuggestionInput"
+import { CONFIG, buildImageUrl, buildApiUrl } from "@/config/urls"
 import { parseConcentracion, parseEnvase } from "@/utils/productParsers"
 import { ToggleRow } from "./ToggleRow"
 import { CountrySelect } from "./CountrySelect"
@@ -102,18 +103,15 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
   // Estado para controlar si las opciones están cargadas
   const [optionsLoaded, setOptionsLoaded] = useState(false)
 
-  // URL base del servidor
-  const SERVER_URL = 'http://10.10.10.251'
-
   // Cargar opciones de los selectores al montar el componente
   useEffect(() => {
     const loadSelectOptions = async () => {
       try {
         const [formasResp, viasResp, poblacionesResp, categoriasResp] = await Promise.all([
-          fetch(`${SERVER_URL}:8890/api/formas-farmaceuticas/activas`),
-          fetch(`${SERVER_URL}:8890/api/vias-administracion/activas`),
-          fetch(`${SERVER_URL}:8890/api/poblaciones-diana/activas`),
-          fetch(`${SERVER_URL}:8890/api/categories/list`) // Endpoint correcto encontrado
+          fetch(buildApiUrl('/api/formas-farmaceuticas/activas')),
+          fetch(buildApiUrl('/api/vias-administracion/activas')),
+          fetch(buildApiUrl('/api/poblaciones-diana/activas')),
+          fetch(buildApiUrl('/api/categories/list')) // Endpoint correcto encontrado
         ])
 
         if (formasResp.ok) {
@@ -144,9 +142,9 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
         // Usar endpoints similares a los que usa CategoriaSelector
         try {
           // Probar diferentes endpoints para obtener todas las opciones
-          const allSubcategoriesResp = await fetch(`${SERVER_URL}:8890/api/subcategories/list`)
-          const allSpecific1Resp = await fetch(`${SERVER_URL}:8890/api/specific1/list`)
-          const allSpecific2Resp = await fetch(`${SERVER_URL}:8890/api/specific2/list`)
+          const allSubcategoriesResp = await fetch(buildApiUrl('/api/subcategories/list'))
+          const allSpecific1Resp = await fetch(buildApiUrl('/api/specific1/list'))
+          const allSpecific2Resp = await fetch(buildApiUrl('/api/specific2/list'))
 
           if (allSubcategoriesResp.ok) {
             const subcategoriesData = await allSubcategoriesResp.json()
@@ -387,7 +385,7 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
     setIsAssistantLoading(true)
     try {
       const response = await fetch(
-        `${SERVER_URL}/api/vademecum-suggestions?principioActivo=${encodeURIComponent(formState.principioActivo)}`
+        buildApiUrl(`/api/vademecum-suggestions?principioActivo=${encodeURIComponent(formState.principioActivo)}`)
       )
 
       if (!response.ok) {
@@ -759,7 +757,7 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
 
       console.log('📦 Payload v3 (único):', JSON.stringify(imagePayloadv3, null, 2))
 
-      const response = await fetch(`${SERVER_URL}:8890/api/product-images/products/${producto.codigoInterno}/images/bulk-update`, {
+      const response = await fetch(buildApiUrl(`/api/product-images/products/${producto.codigoInterno}/images/bulk-update`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -817,7 +815,7 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
       console.log('📤 Enviando datos del producto completo...')
       console.log('📤 Payload completo:', JSON.stringify(payload, null, 2))
       
-      const response = await fetch(`${SERVER_URL}:8890/api/products/${producto.codigoInterno}`, {
+      const response = await fetch(buildApiUrl(`/api/products/${producto.codigoInterno}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -939,7 +937,7 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
     const loadImages = async () => {
       try {
         console.log('Cargando imágenes para producto:', producto.codigoInterno);
-        const response = await fetch(`${SERVER_URL}:8890/api/product-images/product/${producto.codigoInterno}`);
+        const response = await fetch(buildApiUrl(`/api/product-images/product/${producto.codigoInterno}`));
         if (!response.ok) {
           throw new Error('Error al cargar las imágenes');
         }
@@ -954,8 +952,8 @@ export function ProductoDetalle({ open, onOpenChange, producto }: ProductoDetall
 
         // Las imágenes ya vienen con la ruta relativa correcta (/media/products/...)
         const transformedImages = data.map((img: ProductImage) => {
-          // Construir la URL completa agregando el servidor de media con puerto 80
-          const imageUrl = `http://10.10.10.251:80${img.rutaImagen}`;
+          // Usar la función centralizada para construir la URL de imagen
+          const imageUrl = buildImageUrl(img.rutaImagen);
           console.log('URL completa de la imagen:', imageUrl);
           
           return {
